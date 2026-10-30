@@ -1,22 +1,5 @@
 import React, { useState } from 'react';
-import {
-  ImagePlus,
-  Type,
-  LayoutGrid,
-  Maximize2,
-  FlipHorizontal,
-  Lock,
-  Unlock,
-  Pin,
-  Undo2,
-  Redo2,
-  FolderOpen,
-  Save,
-  HelpCircle,
-  X,
-  Minus,
-  Square
-} from 'lucide-react';
+import { X, Minus, Square } from 'lucide-react';
 import {
   isElectron,
   minimizeWindow,
@@ -26,15 +9,15 @@ import {
 
 export interface FloatingHudProps {
   /** Current viewport scale (e.g. 1.0 = 100%) */
-  scale: number;
+  scale?: number;
   /** Whether global viewport horizontal flip is active */
   globalFlipHorizontal?: boolean;
   /** Alias for globalFlipHorizontal */
   flipHorizontal?: boolean;
   /** Whether the canvas is locked against dragging/editing */
-  canvasLocked: boolean;
+  canvasLocked?: boolean;
   /** Whether the Electron window is pinned Always-on-Top */
-  alwaysOnTop: boolean;
+  alwaysOnTop?: boolean;
   /** Undo availability */
   canUndo?: boolean;
   /** Redo availability */
@@ -44,19 +27,19 @@ export interface FloatingHudProps {
   /** Callback when help modal visibility changes */
   onToggleShortcutsModal?: (show: boolean) => void;
 
-  // Actions
+  // Optional legacy callbacks
   onResetZoom?: () => void;
   onFitView?: () => void;
   onToggleGlobalFlip?: () => void;
-  onToggleCanvasLock: () => void;
-  onToggleAlwaysOnTop: () => void;
-  onImportImages: () => void;
-  onCreateTextNote: () => void;
-  onPackGrid: () => void;
+  onToggleCanvasLock?: () => void;
+  onToggleAlwaysOnTop?: () => void;
+  onImportImages?: () => void;
+  onCreateTextNote?: () => void;
+  onPackGrid?: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
-  onOpenProject: () => void;
-  onSaveProject: () => void;
+  onOpenProject?: () => void;
+  onSaveProject?: () => void;
 }
 
 interface ShortcutEntry {
@@ -66,13 +49,12 @@ interface ShortcutEntry {
 
 const SHORTCUT_LIST: ShortcutEntry[] = [
   { keys: 'Space + 左键拖动 / 中键拖动', description: '平移画布视角' },
-  { keys: '滚轮 / X + 上下拖动', description: '以光标为中心无级缩放画布' },
+  { keys: '滚轮 / X + 左右拖动', description: '以光标为中心缩放画布（右移放大，左移缩小）' },
   { keys: 'V', description: '视角全局居中并适配所有内容' },
   { keys: 'A', description: '选中或全部参考图自动紧凑网格排列' },
   { keys: 'T', description: '在当前位置新建文字便签（双击便签编辑）' },
   { keys: 'B', description: '开启 / 关闭选中图片的一键黑白观察模式' },
   { keys: 'H', description: '选中图片单图水平镜像翻转' },
-  { keys: 'Shift + H', description: '全局视口水平镜像翻转（检查画面平衡）' },
   { keys: 'R / Shift + R', description: '顺时针 / 逆时针旋转图片 90°' },
   { keys: 'C', description: '进入选中图片的交互式剪裁模式' },
   { keys: 'L', description: '锁定 / 解锁画布内容（防误触拖动）' },
@@ -86,27 +68,8 @@ const SHORTCUT_LIST: ShortcutEntry[] = [
 ];
 
 export const FloatingHud: React.FC<FloatingHudProps> = ({
-  scale,
-  globalFlipHorizontal,
-  flipHorizontal,
-  canvasLocked,
-  alwaysOnTop,
-  canUndo = false,
-  canRedo = false,
   showShortcutsModal: controlledShowHelp,
-  onToggleShortcutsModal,
-  onResetZoom,
-  onFitView,
-  onToggleGlobalFlip,
-  onToggleCanvasLock,
-  onToggleAlwaysOnTop,
-  onImportImages,
-  onCreateTextNote,
-  onPackGrid,
-  onUndo,
-  onRedo,
-  onOpenProject,
-  onSaveProject
+  onToggleShortcutsModal
 }) => {
   const [internalShowHelp, setInternalShowHelp] = useState(false);
   const isHelpOpen = controlledShowHelp ?? internalShowHelp;
@@ -117,8 +80,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
     }
   };
 
-  const isGlobalFlipped = Boolean(globalFlipHorizontal ?? flipHorizontal);
-  const zoomPercent = Math.round((scale || 1) * 100);
   const isWindowsOrLinuxElectron =
     isElectron() &&
     typeof navigator !== 'undefined' &&
@@ -140,170 +101,6 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
         }}
       />
 
-      {/* Center Floating HUD Pill */}
-      <div
-        className="app-no-drag"
-        style={{
-          position: 'fixed',
-          top: 12,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '5px 8px',
-          backgroundColor: 'rgba(24, 24, 27, 0.88)',
-          backdropFilter: 'blur(14px)',
-          border: '1px solid rgba(63, 63, 70, 0.8)',
-          borderRadius: 11,
-          boxShadow: '0 10px 28px rgba(0, 0, 0, 0.45)',
-          color: '#f4f4f5',
-          zIndex: 900,
-          fontSize: 12
-        }}
-      >
-        {/* Brand Title */}
-        <div
-          className="app-drag-region"
-          style={{
-            fontWeight: 700,
-            fontSize: 12.5,
-            color: '#38bdf8',
-            padding: '0 8px 0 4px',
-            letterSpacing: '0.02em',
-            cursor: 'grab'
-          }}
-        >
-          linRef
-        </div>
-
-        <HudDivider />
-
-        {/* File & Import */}
-        <HudButton
-          icon={<ImagePlus size={14} />}
-          label="导入"
-          title="导入本地图片"
-          onClick={onImportImages}
-        />
-        <HudButton
-          icon={<Type size={14} />}
-          label="便签"
-          title="新建文字便签 (T)"
-          onClick={onCreateTextNote}
-        />
-        <HudButton
-          icon={<LayoutGrid size={14} />}
-          label="排列"
-          title="自动网格排列 (A)"
-          onClick={onPackGrid}
-        />
-
-        <HudDivider />
-
-        {/* Undo / Redo */}
-        {onUndo && (
-          <HudButton
-            icon={<Undo2 size={14} />}
-            title="撤销 (Cmd/Ctrl+Z)"
-            disabled={!canUndo}
-            onClick={onUndo}
-          />
-        )}
-        {onRedo && (
-          <HudButton
-            icon={<Redo2 size={14} />}
-            title="重做 (Cmd/Ctrl+Shift+Z)"
-            disabled={!canRedo}
-            onClick={onRedo}
-          />
-        )}
-
-        {/* Zoom Readout + Fit View */}
-        <button
-          type="button"
-          onClick={onResetZoom ?? onFitView}
-          title="点击重置 100% 缩放或全局居中 (V)"
-          style={{
-            padding: '4px 7px',
-            borderRadius: 6,
-            border: 'none',
-            backgroundColor: 'rgba(39, 39, 42, 0.75)',
-            color: '#e4e4e7',
-            fontSize: 11.5,
-            fontVariantNumeric: 'tabular-nums',
-            cursor: 'pointer',
-            minWidth: 48,
-            textAlign: 'center'
-          }}
-        >
-          {zoomPercent}%
-        </button>
-
-        {onFitView && (
-          <HudButton
-            icon={<Maximize2 size={14} />}
-            title="视角全局居中 (V)"
-            onClick={onFitView}
-          />
-        )}
-
-        {/* Global Horizontal Flip Badge/Button */}
-        {onToggleGlobalFlip && (
-          <HudButton
-            icon={<FlipHorizontal size={14} />}
-            label={isGlobalFlipped ? '已全局镜像' : undefined}
-            title="全局水平镜像翻转 (Shift+H)"
-            active={isGlobalFlipped}
-            onClick={onToggleGlobalFlip}
-          />
-        )}
-
-        <HudDivider />
-
-        {/* Lock Canvas (L) & Pin Window (P) */}
-        <HudButton
-          icon={canvasLocked ? <Lock size={14} /> : <Unlock size={14} />}
-          label={canvasLocked ? '已锁定' : undefined}
-          title={canvasLocked ? '解锁画布 (L)' : '锁定画布防误触 (L)'}
-          active={canvasLocked}
-          activeColor="#f59e0b"
-          onClick={onToggleCanvasLock}
-        />
-
-        <HudButton
-          icon={<Pin size={14} />}
-          label={alwaysOnTop ? '已置顶' : undefined}
-          title="窗口置顶 (P)"
-          active={alwaysOnTop}
-          onClick={onToggleAlwaysOnTop}
-        />
-
-        <HudDivider />
-
-        {/* Project Open / Save */}
-        <HudButton
-          icon={<FolderOpen size={14} />}
-          title="打开 .lref 工程 (Cmd/Ctrl+O)"
-          onClick={onOpenProject}
-        />
-        <HudButton
-          icon={<Save size={14} />}
-          title="保存 .lref 工程 (Cmd/Ctrl+S)"
-          onClick={onSaveProject}
-        />
-
-        <HudDivider />
-
-        {/* Shortcuts Help */}
-        <HudButton
-          icon={<HelpCircle size={14} />}
-          title="快捷键指南 (?)"
-          active={isHelpOpen}
-          onClick={() => setHelpOpen(!isHelpOpen)}
-        />
-      </div>
-
       {/* Windows / Linux Custom Window Controls */}
       {isWindowsOrLinuxElectron && (
         <div
@@ -322,17 +119,17 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
             zIndex: 900
           }}
         >
-          <HudButton
+          <WindowControlButton
             icon={<Minus size={13} />}
             title="最小化"
             onClick={() => minimizeWindow()}
           />
-          <HudButton
+          <WindowControlButton
             icon={<Square size={12} />}
             title="最大化 / 还原"
             onClick={() => toggleMaximizeWindow()}
           />
-          <HudButton
+          <WindowControlButton
             icon={<X size={13} />}
             title="关闭窗口"
             onClick={() => closeWindow()}
@@ -449,23 +246,15 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
   );
 };
 
-interface HudButtonProps {
+interface WindowControlButtonProps {
   icon: React.ReactNode;
-  label?: string;
   title?: string;
-  active?: boolean;
-  activeColor?: string;
-  disabled?: boolean;
   onClick: () => void;
 }
 
-const HudButton: React.FC<HudButtonProps> = ({
+const WindowControlButton: React.FC<WindowControlButtonProps> = ({
   icon,
-  label,
   title,
-  active = false,
-  activeColor = '#0284c7',
-  disabled = false,
   onClick
 }) => {
   const [hovered, setHovered] = useState(false);
@@ -474,44 +263,24 @@ const HudButton: React.FC<HudButtonProps> = ({
     <button
       type="button"
       title={title}
-      disabled={disabled}
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 5,
-        padding: label ? '5px 9px' : '5px 7px',
+        padding: '5px 7px',
         border: 'none',
         borderRadius: 7,
-        backgroundColor: active
-          ? activeColor
-          : hovered && !disabled
-          ? 'rgba(63, 63, 70, 0.7)'
-          : 'transparent',
-        color: disabled ? '#52525b' : active ? '#ffffff' : '#e4e4e7',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        fontSize: 11.5,
-        fontWeight: active ? 600 : 500,
-        whiteSpace: 'nowrap'
+        backgroundColor: hovered ? 'rgba(63, 63, 70, 0.7)' : 'transparent',
+        color: '#e4e4e7',
+        cursor: 'pointer',
+        fontSize: 11.5
       }}
     >
       {icon}
-      {label && <span>{label}</span>}
     </button>
   );
 };
-
-const HudDivider: React.FC = () => (
-  <div
-    style={{
-      width: 1,
-      height: 16,
-      backgroundColor: 'rgba(63, 63, 70, 0.75)',
-      margin: '0 2px'
-    }}
-  />
-);
 
 export default FloatingHud;

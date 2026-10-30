@@ -101,6 +101,8 @@ export interface ProjectFileMeta {
   updatedAt: string;
   viewport: ViewportState;
   canvasLocked: boolean;
+  /** 全局便签文字大小（px） */
+  noteFontSize?: number;
   nodes: Array<
     | (Omit<ImageCanvasNode, 'src'> & { assetPath: string; mimeType: string })
     | TextCanvasNode

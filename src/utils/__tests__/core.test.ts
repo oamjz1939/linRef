@@ -243,11 +243,12 @@ describe('projectArchive (.lref roundtrip)', () => {
       flipHorizontal: true
     };
 
-    const bytes = await exportProjectToLref(sampleNodes, viewport, true);
+    const bytes = await exportProjectToLref(sampleNodes, viewport, true, 22);
     expect(bytes.byteLength).toBeGreaterThan(100);
 
     const restored = await importProjectFromLref(bytes);
     expect(restored.canvasLocked).toBe(true);
+    expect(restored.noteFontSize).toBe(22);
     expect(restored.viewport).toEqual(viewport);
     expect(restored.nodes).toHaveLength(2);
 

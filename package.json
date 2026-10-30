@@ -9,7 +9,18 @@
     "build": "tsc -b && vite build && npm run build:electron",
     "electron": "npm run build:electron && electron .",
     "start": "npm run build && electron .",
+    "icon:gen": "/Users/paranim/my-file-with-nooo-sync/my-software-requirment/venvs/quickcmd/bin/python scripts/generate-icons.py",
     "test": "vitest run"
+  },
+  "build": {
+    "appId": "com.linref.app",
+    "productName": "linRef",
+    "mac": {
+      "icon": "assets/icons/icon.icns"
+    },
+    "win": {
+      "icon": "assets/icons/icon.ico"
+    }
   },
   "dependencies": {
     "jszip": "^3.10.1",

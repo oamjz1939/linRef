@@ -46,7 +46,8 @@ function bytesToDataUrl(bytes: Uint8Array, mimeType: string): string {
 export async function exportProjectToLref(
   nodes: CanvasNode[],
   viewport: ViewportState,
-  canvasLocked: boolean
+  canvasLocked: boolean,
+  noteFontSize?: number
 ): Promise<Uint8Array> {
   const zip = new JSZip();
   const imagesFolder = zip.folder('images');
@@ -77,6 +78,7 @@ export async function exportProjectToLref(
     updatedAt: now,
     viewport,
     canvasLocked,
+    ...(typeof noteFontSize === 'number' ? { noteFontSize } : {}),
     nodes: metaNodes
   };
 
@@ -97,6 +99,7 @@ export async function importProjectFromLref(
   nodes: CanvasNode[];
   viewport: ViewportState;
   canvasLocked: boolean;
+  noteFontSize?: number;
 }> {
   const zip = await JSZip.loadAsync(data);
   const metaFile = zip.file('meta.json');
@@ -142,6 +145,7 @@ export async function importProjectFromLref(
   return {
     nodes,
     viewport: meta.viewport ?? { x: 0, y: 0, scale: 1, flipHorizontal: false },
-    canvasLocked: Boolean(meta.canvasLocked)
+    canvasLocked: Boolean(meta.canvasLocked),
+    noteFontSize: typeof meta.noteFontSize === 'number' ? meta.noteFontSize : undefined
   };
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ImageCanvasNode } from '../types';
+import { CanvasNode, ImageCanvasNode } from '../types';
 import {
   Eye,
   Sliders,
@@ -19,7 +19,13 @@ import {
   Pin,
   Save,
   FolderOpen,
-  Check
+  Check,
+  Undo2,
+  Redo2,
+  HelpCircle,
+  Edit3,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 
 export interface ContextMenuProps {
@@ -27,16 +33,20 @@ export interface ContextMenuProps {
   x: number;
   /** Screen Y coordinate where menu was opened */
   y: number;
-  /** Target image node if right-clicked on an image; null/undefined if right-clicked on empty canvas */
+  /** Target node if right-clicked on an image or text note; null if right-clicked on empty canvas */
+  targetNode?: CanvasNode | null;
+  /** Legacy alias for targetImage */
   targetImage?: ImageCanvasNode | null;
-  /** Alias for targetImage */
-  targetNode?: ImageCanvasNode | null;
-  /** Global horizontal mirror state */
-  globalFlipHorizontal?: boolean;
   /** Canvas lock state */
   canvasLocked?: boolean;
   /** Window always-on-top state */
   alwaysOnTop?: boolean;
+  /** Undo availability */
+  canUndo?: boolean;
+  /** Redo availability */
+  canRedo?: boolean;
+  /** Global note font size (px) */
+  noteFontSize?: number;
   /** Close context menu */
   onClose: () => void;
 
@@ -51,17 +61,25 @@ export interface ContextMenuProps {
   onCopyImage?: () => void;
   onDeleteImage?: () => void;
 
+  // Text note actions
+  onEditTextNote?: () => void;
+  onIncreaseNoteFontSize?: () => void;
+  onDecreaseNoteFontSize?: () => void;
+  onDeleteTextNote?: () => void;
+
   // Canvas blank actions
+  onUndo?: () => void;
+  onRedo?: () => void;
   onPasteImage?: () => void;
   onImportLocalImages?: () => void;
   onCreateTextNote?: () => void;
   onPackGrid?: () => void;
   onFitView?: () => void;
-  onToggleGlobalFlip?: () => void;
   onToggleCanvasLock?: () => void;
   onToggleAlwaysOnTop?: () => void;
   onSaveProject?: () => void;
   onOpenProject?: () => void;
+  onOpenShortcutsModal?: () => void;
 }
 
 function isImageCropped(node: ImageCanvasNode): boolean {
@@ -78,11 +96,13 @@ function isImageCropped(node: ImageCanvasNode): boolean {
 export const ContextMenu: React.FC<ContextMenuProps> = ({
   x,
   y,
-  targetImage,
   targetNode,
-  globalFlipHorizontal = false,
+  targetImage,
   canvasLocked = false,
   alwaysOnTop = false,
+  canUndo = false,
+  canRedo = false,
+  noteFontSize = 16,
   onClose,
   onToggleGrayscale,
   onOpenColorCurve,
@@ -93,19 +113,25 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onFlipImageHorizontal,
   onCopyImage,
   onDeleteImage,
+  onEditTextNote,
+  onIncreaseNoteFontSize,
+  onDecreaseNoteFontSize,
+  onDeleteTextNote,
+  onUndo,
+  onRedo,
   onPasteImage,
   onImportLocalImages,
   onCreateTextNote,
   onPackGrid,
   onFitView,
-  onToggleGlobalFlip,
   onToggleCanvasLock,
   onToggleAlwaysOnTop,
   onSaveProject,
-  onOpenProject
+  onOpenProject,
+  onOpenShortcutsModal
 }) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const imageNode = targetImage ?? targetNode ?? null;
+  const activeNode: CanvasNode | null = targetNode ?? targetImage ?? null;
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: x, top: y });
 
   useEffect(() => {
@@ -118,7 +144,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       left: Math.min(Math.max(8, x), maxLeft),
       top: Math.min(Math.max(8, y), maxTop)
     });
-  }, [x, y, imageNode]);
+  }, [x, y, activeNode]);
 
   useEffect(() => {
     const handlePointerDown = (e: MouseEvent) => {
@@ -144,6 +170,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     onClose();
   };
 
+  const imageNode = activeNode?.type === 'image' ? activeNode : null;
+  const textNode = activeNode?.type === 'text' ? activeNode : null;
   const cropped = imageNode ? isImageCropped(imageNode) : false;
 
   return (
@@ -154,7 +182,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         position: 'fixed',
         left: pos.left,
         top: pos.top,
-        minWidth: 224,
+        minWidth: 232,
         padding: '5px',
         backgroundColor: 'rgba(24, 24, 27, 0.96)',
         backdropFilter: 'blur(16px)',
@@ -231,8 +259,73 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             onClick={() => runAndClose(onDeleteImage)}
           />
         </>
+      ) : textNode ? (
+        <>
+          <MenuItem
+            icon={<Edit3 size={14} />}
+            label="编辑便签"
+            shortcut="双击"
+            disabled={canvasLocked}
+            onClick={() => {
+              if (!canvasLocked) runAndClose(onEditTextNote);
+            }}
+          />
+          <MenuDivider />
+          <MenuItem
+            icon={<ZoomIn size={14} />}
+            label={`放大文字 (当前 ${noteFontSize}px)`}
+            shortcut="+2px"
+            disabled={canvasLocked || noteFontSize >= 64}
+            onClick={() => {
+              if (!canvasLocked && noteFontSize < 64) {
+                runAndClose(onIncreaseNoteFontSize);
+              }
+            }}
+          />
+          <MenuItem
+            icon={<ZoomOut size={14} />}
+            label={`缩小文字 (当前 ${noteFontSize}px)`}
+            shortcut="-2px"
+            disabled={canvasLocked || noteFontSize <= 10}
+            onClick={() => {
+              if (!canvasLocked && noteFontSize > 10) {
+                runAndClose(onDecreaseNoteFontSize);
+              }
+            }}
+          />
+          <MenuDivider />
+          <MenuItem
+            icon={<Trash2 size={14} />}
+            label="删除便签"
+            shortcut="Del"
+            danger
+            disabled={canvasLocked}
+            onClick={() => {
+              if (!canvasLocked) runAndClose(onDeleteTextNote ?? onDeleteImage);
+            }}
+          />
+        </>
       ) : (
         <>
+          <MenuItem
+            icon={<Undo2 size={14} />}
+            label="撤销"
+            shortcut="Cmd/Ctrl+Z"
+            disabled={!canUndo}
+            onClick={() => {
+              if (canUndo) runAndClose(onUndo);
+            }}
+          />
+          <MenuItem
+            icon={<Redo2 size={14} />}
+            label="重做"
+            shortcut="Cmd/Ctrl+Shift+Z"
+            disabled={!canRedo}
+            onClick={() => {
+              if (canRedo) runAndClose(onRedo);
+            }}
+          />
+          <MenuDivider />
           <MenuItem
             icon={<ClipboardPaste size={14} />}
             label="粘贴图片"
@@ -263,13 +356,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             shortcut="V"
             onClick={() => runAndClose(onFitView)}
           />
-          <MenuItem
-            icon={<FlipHorizontal size={14} />}
-            label="全局水平镜像翻转"
-            shortcut="Shift+H"
-            checked={globalFlipHorizontal}
-            onClick={() => runAndClose(onToggleGlobalFlip)}
-          />
           <MenuDivider />
           <MenuItem
             icon={canvasLocked ? <Lock size={14} /> : <Unlock size={14} />}
@@ -297,6 +383,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             label="打开工程"
             shortcut="Cmd/Ctrl+O"
             onClick={() => runAndClose(onOpenProject)}
+          />
+          <MenuDivider />
+          <MenuItem
+            icon={<HelpCircle size={14} />}
+            label="快捷键说明"
+            shortcut="?"
+            onClick={() => runAndClose(onOpenShortcutsModal)}
           />
         </>
       )}

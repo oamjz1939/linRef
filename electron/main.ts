@@ -4,8 +4,20 @@ import * as fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
 
+function getAppIconPath(): string | undefined {
+  const isMac = process.platform === 'darwin';
+  const iconFile = isMac
+    ? 'icon-mac.png'
+    : process.platform === 'win32'
+    ? 'icon.ico'
+    : 'icon-win.png';
+  const candidate = path.join(__dirname, '..', 'assets', 'icons', iconFile);
+  return fs.existsSync(candidate) ? candidate : undefined;
+}
+
 function createWindow(): void {
   const isMac = process.platform === 'darwin';
+  const iconPath = getAppIconPath();
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -13,6 +25,7 @@ function createWindow(): void {
     minWidth: 480,
     minHeight: 360,
     backgroundColor: '#18181b',
+    icon: iconPath,
     frame: isMac ? true : false,
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: isMac ? { x: 14, y: 14 } : undefined,
@@ -148,6 +161,15 @@ function registerIpcHandlers(): void {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && app.dock) {
+    const macIconPath = getAppIconPath();
+    if (macIconPath) {
+      const dockIcon = nativeImage.createFromPath(macIconPath);
+      if (!dockIcon.isEmpty()) {
+        app.dock.setIcon(dockIcon);
+      }
+    }
+  }
   registerIpcHandlers();
   createWindow();
 

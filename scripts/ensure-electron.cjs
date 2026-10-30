@@ -13,7 +13,27 @@ function isElectronReady() {
   return fs.existsSync(path.join(distDir, relPath));
 }
 
+function syncMacBundleIcon() {
+  if (process.platform !== 'darwin') return;
+  const customIcns = path.join(__dirname, '..', 'assets', 'icons', 'icon.icns');
+  const targetIcns = path.join(
+    distDir,
+    'Electron.app',
+    'Contents',
+    'Resources',
+    'electron.icns'
+  );
+  if (fs.existsSync(customIcns) && fs.existsSync(path.dirname(targetIcns))) {
+    try {
+      fs.copyFileSync(customIcns, targetIcns);
+    } catch {
+      // Ignore permission error if any
+    }
+  }
+}
+
 if (isElectronReady()) {
+  syncMacBundleIcon();
   process.exit(0);
 }
 

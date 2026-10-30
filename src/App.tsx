@@ -5,7 +5,7 @@ import { FloatingHud } from './components/FloatingHud';
 import { ContextMenu } from './components/ContextMenu';
 import { ColorCurvePanel } from './components/ColorCurvePanel';
 import { CropOverlay } from './components/CropOverlay';
-import { ImageCanvasNode, Point } from './types';
+import { CanvasNode, ImageCanvasNode, Point } from './types';
 import { renderProcessedImage } from './utils/imageProcessor';
 import { exportProjectToLref, importProjectFromLref } from './utils/projectArchive';
 import {
@@ -53,6 +53,8 @@ export const App: React.FC = () => {
     setCanvasLocked,
     alwaysOnTop,
     setAlwaysOnTop,
+    noteFontSize,
+    changeGlobalNoteFontSize,
     viewport,
     setViewport,
     canUndo,
@@ -75,7 +77,6 @@ export const App: React.FC = () => {
     updateTextNode,
     packGrid,
     fitAllToViewport,
-    toggleGlobalFlipHorizontal,
     loadProjectState
   } = store;
 
@@ -88,7 +89,7 @@ export const App: React.FC = () => {
   const [contextMenuState, setContextMenuState] = useState<{
     x: number;
     y: number;
-    targetImage: ImageCanvasNode | null;
+    targetNode: CanvasNode | null;
   } | null>(null);
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -305,7 +306,7 @@ export const App: React.FC = () => {
   // Save .lref project
   const handleSaveProject = useCallback(async () => {
     try {
-      const bytes = await exportProjectToLref(nodes, viewport, canvasLocked);
+      const bytes = await exportProjectToLref(nodes, viewport, canvasLocked, noteFontSize);
       const res = await saveProjectFile(bytes, currentProjectPath);
       if (res.saved) {
         if (res.filePath) {
@@ -316,7 +317,7 @@ export const App: React.FC = () => {
     } catch {
       showToast('保存工程失败');
     }
-  }, [nodes, viewport, canvasLocked, currentProjectPath, showToast]);
+  }, [nodes, viewport, canvasLocked, noteFontSize, currentProjectPath, showToast]);
 
   // Open .lref project
   const handleOpenProject = useCallback(async () => {
@@ -491,7 +492,7 @@ export const App: React.FC = () => {
         return;
       }
 
-      // Hold X for smooth vertical drag zoom
+      // Hold X for smooth horizontal drag zoom
       if (keyLower === 'x' && !e.shiftKey && !e.altKey) {
         if (!xZoomPressed) {
           setXZoomPressed(true);
@@ -528,12 +529,7 @@ export const App: React.FC = () => {
         }
         case 'h': {
           e.preventDefault();
-          if (e.shiftKey) {
-            toggleGlobalFlipHorizontal();
-            showToast(
-              !viewport.flipHorizontal ? '已开启全局水平镜像 (Shift+H)' : '已还原全局水平镜像 (Shift+H)'
-            );
-          } else if (selectedImageNodes.length > 0) {
+          if (!e.shiftKey && selectedImageNodes.length > 0) {
             flipSelectedHorizontal();
             showToast('已水平翻转选中图片 (H)');
           }
@@ -614,14 +610,12 @@ export const App: React.FC = () => {
     selectedImageNodes,
     primarySelectedImage,
     croppingNodeId,
-    viewport.flipHorizontal,
     undo,
     redo,
     fitAllToViewport,
     packGrid,
     handleCreateTextNote,
     toggleSelectedGrayscale,
-    toggleGlobalFlipHorizontal,
     flipSelectedHorizontal,
     rotateSelected,
     setCroppingNodeId,
@@ -645,10 +639,9 @@ export const App: React.FC = () => {
         position: 'relative'
       }}
     >
-      {/* Top Floating HUD */}
+      {/* Top Drag Region & Shortcuts Help Modal */}
       <FloatingHud
         scale={viewport.scale}
-        globalFlipHorizontal={viewport.flipHorizontal}
         canvasLocked={canvasLocked}
         alwaysOnTop={alwaysOnTop}
         canUndo={canUndo}
@@ -657,12 +650,6 @@ export const App: React.FC = () => {
         onToggleShortcutsModal={setShowShortcutsModal}
         onResetZoom={handleResetZoom}
         onFitView={() => fitAllToViewport(window.innerWidth, window.innerHeight)}
-        onToggleGlobalFlip={() => {
-          toggleGlobalFlipHorizontal();
-          showToast(
-            !viewport.flipHorizontal ? '已开启全局水平镜像' : '已关闭全局水平镜像'
-          );
-        }}
         onToggleCanvasLock={handleToggleCanvasLock}
         onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
         onImportImages={handleImportImagesFromPicker}
@@ -695,11 +682,11 @@ export const App: React.FC = () => {
         onPointerMoveWorld={(pt) => {
           lastWorldPosRef.current = pt;
         }}
-        onOpenContextMenu={(screenX, screenY, targetImage) => {
+        onOpenContextMenu={(screenX, screenY, targetNode) => {
           setContextMenuState({
             x: screenX,
             y: screenY,
-            targetImage
+            targetNode
           });
         }}
       />
@@ -744,21 +731,23 @@ export const App: React.FC = () => {
         <ContextMenu
           x={contextMenuState.x}
           y={contextMenuState.y}
-          targetImage={contextMenuState.targetImage}
-          globalFlipHorizontal={viewport.flipHorizontal}
+          targetNode={contextMenuState.targetNode}
           canvasLocked={canvasLocked}
           alwaysOnTop={alwaysOnTop}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          noteFontSize={noteFontSize}
           onClose={() => setContextMenuState(null)}
           onToggleGrayscale={toggleSelectedGrayscale}
           onOpenColorCurve={() => setShowColorCurvePanel(true)}
           onStartCrop={() => {
-            if (contextMenuState.targetImage) {
-              setCroppingNodeId(contextMenuState.targetImage.id);
+            if (contextMenuState.targetNode?.type === 'image') {
+              setCroppingNodeId(contextMenuState.targetNode.id);
             }
           }}
           onResetCrop={() => {
-            if (contextMenuState.targetImage) {
-              resetImageCrop(contextMenuState.targetImage.id);
+            if (contextMenuState.targetNode?.type === 'image') {
+              resetImageCrop(contextMenuState.targetNode.id);
               showToast('已重置图片裁切');
             }
           }}
@@ -767,6 +756,24 @@ export const App: React.FC = () => {
           onFlipImageHorizontal={flipSelectedHorizontal}
           onCopyImage={handleCopySelectedImage}
           onDeleteImage={deleteSelected}
+          onEditTextNote={() => {
+            if (contextMenuState.targetNode?.type === 'text') {
+              setEditingTextId(contextMenuState.targetNode.id);
+            }
+          }}
+          onIncreaseNoteFontSize={() => {
+            const next = Math.min(64, noteFontSize + 2);
+            changeGlobalNoteFontSize(2);
+            showToast(`便签文字已放大 (${next}px)`);
+          }}
+          onDecreaseNoteFontSize={() => {
+            const next = Math.max(10, noteFontSize - 2);
+            changeGlobalNoteFontSize(-2);
+            showToast(`便签文字已缩小 (${next}px)`);
+          }}
+          onDeleteTextNote={deleteSelected}
+          onUndo={undo}
+          onRedo={redo}
           onPasteImage={() =>
             handlePasteFromClipboard(
               screenToWorld(
@@ -790,11 +797,11 @@ export const App: React.FC = () => {
           }
           onPackGrid={packGrid}
           onFitView={() => fitAllToViewport(window.innerWidth, window.innerHeight)}
-          onToggleGlobalFlip={toggleGlobalFlipHorizontal}
           onToggleCanvasLock={handleToggleCanvasLock}
           onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
           onSaveProject={handleSaveProject}
           onOpenProject={handleOpenProject}
+          onOpenShortcutsModal={() => setShowShortcutsModal(true)}
         />
       )}
 

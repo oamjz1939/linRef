@@ -46,7 +46,7 @@ export interface ReferenceCanvasProps {
     nodeId: string,
     patch: Partial<Pick<TextCanvasNode, 'text' | 'fontSize' | 'color' | 'backgroundColor' | 'width' | 'height'>>
   ) => void;
-  onOpenContextMenu: (screenX: number, screenY: number, targetImage: ImageCanvasNode | null) => void;
+  onOpenContextMenu: (screenX: number, screenY: number, targetNode: CanvasNode | null) => void;
   onBringToFront?: (ids: string[]) => void;
   onPointerMoveWorld?: (worldPos: Point) => void;
 }
@@ -241,7 +241,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
     anchorScreenY: number;
     anchorWorldX: number;
     anchorWorldY: number;
-    lastClientY: number;
+    lastClientX: number;
   } | null>(null);
 
   const lastPointerScreenRef = useRef<{ x: number; y: number }>({
@@ -285,7 +285,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
         anchorScreenY: sy,
         anchorWorldX: worldPt.x,
         anchorWorldY: worldPt.y,
-        lastClientY: sy
+        lastClientX: sx
       };
     } else {
       xZoomStateRef.current = null;
@@ -381,11 +381,11 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
       }
 
       if (xZoomPressed && xZoomStateRef.current) {
-        const dy = e.clientY - xZoomStateRef.current.lastClientY;
-        xZoomStateRef.current.lastClientY = e.clientY;
-        if (Math.abs(dy) > 0) {
-          // Moving mouse up (dy < 0) zooms in, moving down (dy > 0) zooms out
-          const factor = Math.exp(-dy * 0.0065);
+        const dx = e.clientX - xZoomStateRef.current.lastClientX;
+        xZoomStateRef.current.lastClientX = e.clientX;
+        if (Math.abs(dx) > 0) {
+          // Moving mouse right (dx > 0) zooms in, moving left (dx < 0) zooms out
+          const factor = Math.exp(dx * 0.0065);
           zoomAtScreenPoint(
             xZoomStateRef.current.anchorScreenX,
             xZoomStateRef.current.anchorScreenY,
@@ -443,7 +443,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
         anchorScreenY: evt.clientY,
         anchorWorldX: worldPt.x,
         anchorWorldY: worldPt.y,
-        lastClientY: evt.clientY
+        lastClientX: evt.clientX
       };
       setIsXZoomDragging(true);
       return;
@@ -727,7 +727,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
   } else if (spacePressed) {
     cursorStyle = 'grab';
   } else if (xZoomPressed) {
-    cursorStyle = 'ns-resize';
+    cursorStyle = 'ew-resize';
   }
 
   const stageX = viewport.flipHorizontal ? windowSize.width - viewport.x : viewport.x;
@@ -829,7 +829,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
                   if (!selectedSet.has(node.id)) {
                     onSelectIds([node.id]);
                   }
-                  onOpenContextMenu(e.evt.clientX, e.evt.clientY, null);
+                  onOpenContextMenu(e.evt.clientX, e.evt.clientY, node);
                 }}
                 onDragStart={(e) => handleNodeDragStart(e, node)}
                 onDragMove={(e) => handleNodeDragMove(e, node)}

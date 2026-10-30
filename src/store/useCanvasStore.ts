@@ -19,6 +19,42 @@ import {
 import { computeFitViewport, computeGridLayout } from '../utils/layoutAndSnap';
 
 const MAX_HISTORY = 50;
+const NOTE_FONT_SIZE_STORAGE_KEY = 'linref.noteFontSize';
+const MIN_NOTE_FONT_SIZE = 10;
+const MAX_NOTE_FONT_SIZE = 64;
+const DEFAULT_NOTE_FONT_SIZE = 16;
+
+function clampNoteFontSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT_NOTE_FONT_SIZE;
+  return Math.max(MIN_NOTE_FONT_SIZE, Math.min(MAX_NOTE_FONT_SIZE, Math.round(size)));
+}
+
+function readPersistedNoteFontSize(): number {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(NOTE_FONT_SIZE_STORAGE_KEY);
+      if (raw !== null) {
+        const parsed = Number(raw);
+        if (Number.isFinite(parsed)) {
+          return clampNoteFontSize(parsed);
+        }
+      }
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+  return DEFAULT_NOTE_FONT_SIZE;
+}
+
+function writePersistedNoteFontSize(size: number): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(NOTE_FONT_SIZE_STORAGE_KEY, String(size));
+    }
+  } catch {
+    // Ignore storage write errors
+  }
+}
 
 function cloneNodes(nodes: CanvasNode[]): CanvasNode[] {
   return nodes.map((n) => {
@@ -43,6 +79,7 @@ export function useCanvasStore() {
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [canvasLocked, setCanvasLocked] = useState<boolean>(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState<boolean>(false);
+  const [noteFontSize, setNoteFontSize] = useState<number>(() => readPersistedNoteFontSize());
   const [viewport, setViewport] = useState<ViewportState>({
     x: 0,
     y: 0,
@@ -178,7 +215,7 @@ export function useCanvasStore() {
           y: Math.round(centerWorld.y - 45),
           width: 220,
           height: 90,
-          fontSize: 16,
+          fontSize: noteFontSize,
           color: '#f3f4f6',
           backgroundColor: 'rgba(30, 41, 59, 0.88)',
           zIndex: maxZ + 1
@@ -190,7 +227,27 @@ export function useCanvasStore() {
       setEditingTextId(id);
       return id;
     },
-    [canvasLocked, commitWithHistory]
+    [canvasLocked, commitWithHistory, noteFontSize]
+  );
+
+  const changeGlobalNoteFontSize = useCallback(
+    (delta: number) => {
+      if (canvasLocked) return;
+      const nextSize = clampNoteFontSize(noteFontSize + delta);
+      if (nextSize === noteFontSize) return;
+      setNoteFontSize(nextSize);
+      writePersistedNoteFontSize(nextSize);
+      commitWithHistory((prev) =>
+        prev.map((node) => {
+          if (node.type !== 'text') return node;
+          return {
+            ...node,
+            fontSize: nextSize
+          };
+        })
+      );
+    },
+    [canvasLocked, commitWithHistory, noteFontSize]
   );
 
   const updateNodesTransient = useCallback(
@@ -535,11 +592,25 @@ export function useCanvasStore() {
       nodes: CanvasNode[];
       viewport: ViewportState;
       canvasLocked: boolean;
+      noteFontSize?: number;
     }) => {
       pastRef.current = [];
       futureRef.current = [];
-      setNodes(loaded.nodes);
-      setViewport(loaded.viewport);
+      const resolvedFontSize =
+        typeof loaded.noteFontSize === 'number'
+          ? clampNoteFontSize(loaded.noteFontSize)
+          : readPersistedNoteFontSize();
+      setNoteFontSize(resolvedFontSize);
+      writePersistedNoteFontSize(resolvedFontSize);
+      setNodes(
+        loaded.nodes.map((n) =>
+          n.type === 'text' ? { ...n, fontSize: resolvedFontSize } : n
+        )
+      );
+      setViewport({
+        ...loaded.viewport,
+        flipHorizontal: false
+      });
       setCanvasLocked(loaded.canvasLocked);
       setSelectedIds([]);
       setCroppingNodeId(null);
@@ -569,6 +640,8 @@ export function useCanvasStore() {
     setCanvasLocked,
     alwaysOnTop,
     setAlwaysOnTop,
+    noteFontSize,
+    changeGlobalNoteFontSize,
     viewport,
     setViewport,
     canUndo: pastRef.current.length > 0 && !canvasLocked,
