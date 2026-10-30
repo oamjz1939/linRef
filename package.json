@@ -10,16 +10,54 @@
     "electron": "npm run build:electron && electron .",
     "start": "npm run build && electron .",
     "icon:gen": "/Users/paranim/my-file-with-nooo-sync/my-software-requirment/venvs/quickcmd/bin/python scripts/generate-icons.py",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "dist": "npm run build && electron-builder",
     "test": "vitest run"
   },
   "build": {
     "appId": "com.linref.app",
     "productName": "linRef",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "assets/icons/**/*",
+      "package.json"
+    ],
     "mac": {
-      "icon": "assets/icons/icon.icns"
+      "icon": "assets/icons/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.graphics-design",
+      "identity": null
+    },
+    "dmg": {
+      "window": {
+        "width": 540,
+        "height": 380
+      },
+      "contents": [
+        {
+          "x": 410,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 130,
+          "y": 190,
+          "type": "file"
+        }
+      ]
     },
     "win": {
-      "icon": "assets/icons/icon.ico"
+      "icon": "assets/icons/icon.ico",
+      "target": [
+        "nsis"
+      ]
     }
   },
   "dependencies": {
@@ -37,9 +75,10 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.1",
+    "electron-builder": "^26.18.0",
+    "jsdom": "^25.0.1",
     "typescript": "^5.7.2",
     "vite": "^6.0.5",
-    "vitest": "^2.1.8",
-    "jsdom": "^25.0.1"
+    "vitest": "^2.1.8"
   }
 }
