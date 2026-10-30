@@ -1,6 +1,6 @@
 {
   "name": "linref",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Lightweight reference image viewer for artists (PureRef alternative)",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -12,6 +12,7 @@
     "icon:gen": "/Users/paranim/my-file-with-nooo-sync/my-software-requirment/venvs/quickcmd/bin/python scripts/generate-icons.py",
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "dist": "npm run build && electron-builder",
+    "version:bump": "python3 bump_version_script.py",
     "test": "vitest run"
   },
   "build": {
