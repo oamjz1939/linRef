@@ -564,20 +564,16 @@ export function useCanvasStore() {
 
   const fitAllToViewport = useCallback(
     (viewportWidth: number, viewportHeight: number) => {
-      const targetNodes =
-        selectedIds.length > 0
-          ? nodes.filter((n) => selectedIds.includes(n.id))
-          : nodes;
       const nextVp = computeFitViewport(
-        targetNodes.length > 0 ? targetNodes : nodes,
+        nodes,
         viewportWidth,
         viewportHeight,
-        64,
+        12,
         viewport.flipHorizontal
       );
       setViewport(nextVp);
     },
-    [nodes, selectedIds, viewport.flipHorizontal]
+    [nodes, viewport.flipHorizontal]
   );
 
   const toggleGlobalFlipHorizontal = useCallback(() => {

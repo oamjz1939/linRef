@@ -200,7 +200,7 @@ export function computeFitViewport(
   nodes: CanvasNode[],
   viewportWidth: number,
   viewportHeight: number,
-  padding = 64,
+  padding = 12,
   currentFlipHorizontal = false
 ): ViewportState {
   if (nodes.length === 0) {
@@ -226,10 +226,10 @@ export function computeFitViewport(
 
   const contentW = Math.max(1, maxX - minX);
   const contentH = Math.max(1, maxY - minY);
-  const availW = Math.max(100, viewportWidth - padding * 2);
-  const availH = Math.max(100, viewportHeight - padding * 2);
+  const availW = Math.max(40, viewportWidth - padding * 2);
+  const availH = Math.max(40, viewportHeight - padding * 2);
 
-  const scale = Math.max(0.05, Math.min(4, Math.min(availW / contentW, availH / contentH)));
+  const scale = Math.max(0.05, Math.min(10, Math.min(availW / contentW, availH / contentH)));
 
   const contentCenterX = (minX + maxX) / 2;
   const contentCenterY = (minY + maxY) / 2;
