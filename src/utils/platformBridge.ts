@@ -6,6 +6,17 @@ export function isElectron(): boolean {
   return typeof window !== 'undefined' && Boolean(window.electronAPI);
 }
 
+export function getPathForFile(file: File): string {
+  if (typeof window !== 'undefined' && window.electronAPI && typeof window.electronAPI.getPathForFile === 'function') {
+    try {
+      return window.electronAPI.getPathForFile(file) || '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
 export async function setAlwaysOnTop(flag: boolean): Promise<boolean> {
   if (window.electronAPI) {
     return window.electronAPI.setAlwaysOnTop(flag);
@@ -135,21 +146,26 @@ export async function readImageFromClipboard(): Promise<string | null> {
 export async function saveProjectFile(
   data: Uint8Array,
   filePath?: string
-): Promise<{ saved: boolean; filePath?: string }> {
+): Promise<{ saved: boolean; filePath?: string; error?: string }> {
   if (window.electronAPI) {
     return window.electronAPI.saveProject({ data, filePath });
   }
 
-  const blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filePath ? filePath.split(/[\\/]/).pop() || 'project.lref' : 'project.lref';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  return { saved: true, filePath: a.download };
+  try {
+    const blob = new Blob([data as unknown as BlobPart], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filePath ? filePath.split(/[\\/]/).pop() || 'project.lref' : 'project.lref';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return { saved: true, filePath: a.download };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    return { saved: false, error: errorMsg };
+  }
 }
 
 /**
@@ -157,7 +173,7 @@ export async function saveProjectFile(
  */
 export async function openProjectFile(
   filePath?: string
-): Promise<{ canceled: boolean; filePath?: string; data?: Uint8Array }> {
+): Promise<{ canceled: boolean; filePath?: string; data?: Uint8Array; error?: string }> {
   if (window.electronAPI) {
     return window.electronAPI.openProject(filePath);
   }
@@ -169,7 +185,7 @@ export async function openProjectFile(
     input.style.display = 'none';
 
     let settled = false;
-    const finish = (result: { canceled: boolean; filePath?: string; data?: Uint8Array }) => {
+    const finish = (result: { canceled: boolean; filePath?: string; data?: Uint8Array; error?: string }) => {
       if (settled) return;
       settled = true;
       if (input.parentNode) {
@@ -191,8 +207,9 @@ export async function openProjectFile(
           filePath: file.name,
           data: new Uint8Array(buffer)
         });
-      } catch {
-        finish({ canceled: true });
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        finish({ canceled: true, error: errorMsg });
       }
     };
 
@@ -213,6 +230,7 @@ export const openProject = openProjectFile;
 
 export const platformBridge = {
   isElectron,
+  getPathForFile,
   setAlwaysOnTop,
   getAlwaysOnTop,
   minimizeWindow,

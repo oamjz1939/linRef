@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 export interface ElectronAPI {
   setAlwaysOnTop: (flag: boolean) => Promise<boolean>;
@@ -11,13 +11,14 @@ export interface ElectronAPI {
   saveProject: (payload: {
     data: Uint8Array;
     filePath?: string;
-  }) => Promise<{ saved: boolean; filePath?: string }>;
+  }) => Promise<{ saved: boolean; filePath?: string; error?: string }>;
   openProject: (
     filePath?: string
-  ) => Promise<{ canceled: boolean; filePath?: string; data?: Uint8Array }>;
+  ) => Promise<{ canceled: boolean; filePath?: string; data?: Uint8Array; error?: string }>;
   setDocumentDirty: (dirty: boolean) => Promise<boolean>;
   forceCloseWindow: () => Promise<void>;
   onRequestSaveAndClose: (callback: () => void) => () => void;
+  getPathForFile: (file: File) => string;
 }
 
 const api: ElectronAPI = {
@@ -39,6 +40,13 @@ const api: ElectronAPI = {
     return () => {
       ipcRenderer.removeListener('app:request-save-and-close', handler);
     };
+  },
+  getPathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
   }
 };
 

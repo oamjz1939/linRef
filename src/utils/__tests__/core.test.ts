@@ -12,7 +12,13 @@ import {
   computeGridLayout,
   computeFitViewport
 } from '../layoutAndSnap';
-import { exportProjectToLref, importProjectFromLref } from '../projectArchive';
+import {
+  exportProjectToLref,
+  importProjectFromLref,
+  imageSourceToBytes,
+  getExtensionFromMimeType
+} from '../projectArchive';
+import { getPathForFile } from '../platformBridge';
 import {
   CanvasNode,
   DEFAULT_COLOR_ADJUSTMENTS,
@@ -262,5 +268,130 @@ describe('projectArchive (.lref roundtrip)', () => {
     expect(imgNode.adjustments.terminatorMode).toBe(true);
     expect(imgNode.adjustments.terminatorThreshold).toBe(62);
     expect(imgNode.adjustments.curvePoints).toHaveLength(3);
+  });
+
+  it('getExtensionFromMimeType correctly maps MIME types to extensions', () => {
+    expect(getExtensionFromMimeType('image/jpeg')).toBe('jpg');
+    expect(getExtensionFromMimeType('image/jpg')).toBe('jpg');
+    expect(getExtensionFromMimeType('image/png')).toBe('png');
+    expect(getExtensionFromMimeType('image/webp')).toBe('webp');
+    expect(getExtensionFromMimeType('image/gif')).toBe('gif');
+    expect(getExtensionFromMimeType('image/svg+xml')).toBe('svg');
+    expect(getExtensionFromMimeType('image/bmp')).toBe('bmp');
+    expect(getExtensionFromMimeType('unknown/custom')).toBe('png');
+  });
+
+  it('imageSourceToBytes decodes valid data URLs correctly', async () => {
+    const tinyPng =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const result = await imageSourceToBytes(tinyPng);
+    expect(result.bytes.byteLength).toBeGreaterThan(0);
+    expect(result.mimeType).toBe('image/png');
+  });
+
+  it('imageSourceToBytes handles data URLs with parameters, newlines, and whitespace', async () => {
+    const dirtyDataUrl =
+      'data:image/jpeg;charset=utf-8;base64,\r\n /9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA= \n';
+    const result = await imageSourceToBytes(dirtyDataUrl);
+    expect(result.bytes.byteLength).toBeGreaterThan(0);
+    expect(result.mimeType).toContain('jpeg');
+  });
+
+  it('imageSourceToBytes handles non-base64 percent-encoded data URLs', async () => {
+    const svgData = 'data:image/svg+xml;utf8,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%3E%3C/svg%3E';
+    const result = await imageSourceToBytes(svgData);
+    expect(result.bytes.byteLength).toBeGreaterThan(0);
+    expect(result.mimeType).toBe('image/svg+xml');
+  });
+
+  it('imageSourceToBytes throws for invalid image source', async () => {
+    await expect(imageSourceToBytes('')).rejects.toThrow();
+    await expect(imageSourceToBytes('invalid-protocol://foo')).rejects.toThrow();
+  });
+
+  it('exportProjectToLref tolerates single image node failure without aborting entire project save', async () => {
+    const validPng =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+    const nodesWithBroken: CanvasNode[] = [
+      {
+        id: 'broken_img',
+        type: 'image',
+        name: 'corrupted.png',
+        src: 'invalid-source-that-cannot-be-fetched',
+        naturalWidth: 100,
+        naturalHeight: 100,
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        zIndex: 1,
+        rotation: 0,
+        flipX: false,
+        crop: DEFAULT_CROP,
+        adjustments: DEFAULT_COLOR_ADJUSTMENTS
+      },
+      {
+        id: 'valid_img',
+        type: 'image',
+        name: 'valid.png',
+        src: validPng,
+        naturalWidth: 50,
+        naturalHeight: 50,
+        x: 120,
+        y: 0,
+        width: 50,
+        height: 50,
+        zIndex: 2,
+        rotation: 0,
+        flipX: false,
+        crop: DEFAULT_CROP,
+        adjustments: DEFAULT_COLOR_ADJUSTMENTS
+      },
+      {
+        id: 'note_1',
+        type: 'text',
+        text: 'Save test note',
+        x: 200,
+        y: 0,
+        width: 100,
+        height: 50,
+        fontSize: 14,
+        color: '#fff',
+        backgroundColor: '#000',
+        zIndex: 3
+      }
+    ];
+
+    const vp: ViewportState = { x: 0, y: 0, scale: 1, flipHorizontal: false };
+    const bytes = await exportProjectToLref(nodesWithBroken, vp, false);
+    expect(bytes.byteLength).toBeGreaterThan(50);
+
+    const restored = await importProjectFromLref(bytes);
+    // The valid image and text note should be restored, while the corrupted image is safely omitted
+    expect(restored.nodes).toHaveLength(2);
+    expect(restored.nodes.map((n) => n.id)).toEqual(['valid_img', 'note_1']);
+  });
+
+  it('platformBridge getPathForFile falls back gracefully when window.electronAPI is missing or throws', () => {
+    const dummyFile = new File(['test'], 'sample.lref');
+    const path = getPathForFile(dummyFile);
+    expect(path).toBe('');
+
+    // Mocking window.electronAPI on globalThis
+    const originalWindow = (globalThis as any).window;
+    (globalThis as any).window = {
+      electronAPI: {
+        getPathForFile: (f: File) => `/custom/absolute/path/${f.name}`
+      }
+    };
+    expect(getPathForFile(dummyFile)).toBe('/custom/absolute/path/sample.lref');
+
+    // Clean up
+    if (originalWindow !== undefined) {
+      (globalThis as any).window = originalWindow;
+    } else {
+      delete (globalThis as any).window;
+    }
   });
 });

@@ -122,6 +122,45 @@ function createWindow(): void {
   });
 }
 
+async function writeAtomicWithRetry(targetPath: string, data: Uint8Array): Promise<void> {
+  const dir = path.dirname(targetPath);
+  await fs.promises.mkdir(dir, { recursive: true });
+
+  const tempPath = `${targetPath}.${Date.now()}.${Math.random().toString(36).slice(2, 6)}.tmp`;
+  try {
+    await fs.promises.writeFile(tempPath, data);
+
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      try {
+        await fs.promises.rename(tempPath, targetPath);
+        return;
+      } catch (renameErr: unknown) {
+        attempts++;
+        const code = (renameErr as { code?: string })?.code;
+        if (
+          attempts < maxAttempts &&
+          (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES')
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        } else {
+          throw renameErr;
+        }
+      }
+    }
+  } catch (err) {
+    try {
+      if (fs.existsSync(tempPath)) {
+        await fs.promises.unlink(tempPath);
+      }
+    } catch {
+      // 忽略清理临时文件时的异常
+    }
+    throw err;
+  }
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle('window:set-always-on-top', (_event, flag: boolean) => {
     if (!mainWindow) return false;
@@ -192,52 +231,64 @@ function registerIpcHandlers(): void {
   ipcMain.handle(
     'project:save',
     async (_event, payload: { data: Uint8Array; filePath?: string }) => {
-      if (!mainWindow) return { saved: false };
+      if (!mainWindow) return { saved: false, error: '窗口已销毁' };
 
-      let targetPath = payload.filePath;
-      if (!targetPath) {
-        const result = await dialog.showSaveDialog(mainWindow, {
-          title: '保存 linRef 参考图工程',
-          defaultPath: 'untitled.lref',
-          filters: [{ name: 'linRef Project', extensions: ['lref'] }]
-        });
-        if (result.canceled || !result.filePath) {
-          return { saved: false };
+      try {
+        let targetPath = payload.filePath;
+        if (!targetPath || !path.isAbsolute(targetPath)) {
+          const result = await dialog.showSaveDialog(mainWindow, {
+            title: '保存 linRef 参考图工程',
+            defaultPath: targetPath ? path.basename(targetPath) : 'untitled.lref',
+            filters: [{ name: 'linRef Project', extensions: ['lref'] }]
+          });
+          if (result.canceled || !result.filePath) {
+            return { saved: false };
+          }
+          targetPath = result.filePath;
         }
-        targetPath = result.filePath;
-      }
 
-      if (!targetPath.toLowerCase().endsWith('.lref')) {
-        targetPath += '.lref';
-      }
+        if (!targetPath.toLowerCase().endsWith('.lref')) {
+          targetPath += '.lref';
+        }
 
-      await fs.promises.writeFile(targetPath, Buffer.from(payload.data));
-      return { saved: true, filePath: targetPath };
+        await writeAtomicWithRetry(targetPath, payload.data);
+        return { saved: true, filePath: targetPath };
+      } catch (err: unknown) {
+        console.error('保存工程发生异常:', err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return { saved: false, error: errorMsg };
+      }
     }
   );
 
   ipcMain.handle('project:open', async (_event, filePath?: string) => {
-    if (!mainWindow) return { canceled: true };
+    if (!mainWindow) return { canceled: true, error: '窗口已销毁' };
 
-    let targetPath = filePath;
-    if (!targetPath) {
-      const result = await dialog.showOpenDialog(mainWindow, {
-        title: '打开 linRef 参考图工程',
-        properties: ['openFile'],
-        filters: [{ name: 'linRef Project', extensions: ['lref'] }]
-      });
-      if (result.canceled || result.filePaths.length === 0) {
-        return { canceled: true };
+    try {
+      let targetPath = filePath;
+      if (!targetPath || !path.isAbsolute(targetPath)) {
+        const result = await dialog.showOpenDialog(mainWindow, {
+          title: '打开 linRef 参考图工程',
+          properties: ['openFile'],
+          filters: [{ name: 'linRef Project', extensions: ['lref'] }]
+        });
+        if (result.canceled || result.filePaths.length === 0) {
+          return { canceled: true };
+        }
+        targetPath = result.filePaths[0];
       }
-      targetPath = result.filePaths[0];
-    }
 
-    const buffer = await fs.promises.readFile(targetPath);
-    return {
-      canceled: false,
-      filePath: targetPath,
-      data: new Uint8Array(buffer)
-    };
+      const buffer = await fs.promises.readFile(targetPath);
+      return {
+        canceled: false,
+        filePath: targetPath,
+        data: new Uint8Array(buffer)
+      };
+    } catch (err: unknown) {
+      console.error('打开工程发生异常:', err);
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return { canceled: true, error: errorMsg };
+    }
   });
 }
 

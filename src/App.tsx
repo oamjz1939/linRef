@@ -13,6 +13,7 @@ import {
   copyImageToClipboard,
   forceCloseWindow,
   getAlwaysOnTop,
+  getPathForFile,
   isElectron,
   onRequestSaveAndClose,
   openProjectFile,
@@ -41,6 +42,13 @@ function loadImageDimensions(src: string): Promise<{ width: number; height: numb
 function isSupportedImageFile(file: File): boolean {
   if (file.type && file.type.startsWith('image/')) return true;
   return /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(file.name);
+}
+
+function isAbsolutePath(p?: string): boolean {
+  if (!p) return false;
+  if (/^[a-zA-Z]:[\\/]/.test(p) || p.startsWith('\\\\')) return true;
+  if (p.startsWith('/')) return true;
+  return false;
 }
 
 export const App: React.FC = () => {
@@ -315,16 +323,22 @@ export const App: React.FC = () => {
       const bytes = await exportProjectToLref(nodes, viewport, canvasLocked, noteFontSize);
       const res = await saveProjectFile(bytes, currentProjectPath);
       if (res.saved) {
-        if (res.filePath) {
+        if (res.filePath && isAbsolutePath(res.filePath)) {
           setCurrentProjectPath(res.filePath);
         }
         setIsDirty(false);
         showToast('工程已保存 (.lref)');
         return true;
       }
+      if (res.error) {
+        console.error('保存工程返回错误:', res.error);
+        showToast(`保存失败: ${res.error}`);
+      }
       return false;
-    } catch {
-      showToast('保存工程失败');
+    } catch (err: unknown) {
+      console.error('保存工程发生异常:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`保存工程失败: ${msg}`);
       return false;
     }
   }, [nodes, viewport, canvasLocked, noteFontSize, currentProjectPath, setIsDirty, showToast]);
@@ -367,11 +381,14 @@ export const App: React.FC = () => {
       if (res.canceled || !res.data) return;
       const loaded = await importProjectFromLref(res.data);
       loadProjectState(loaded);
-      if (res.filePath) {
+      if (res.filePath && isAbsolutePath(res.filePath)) {
         setCurrentProjectPath(res.filePath);
+      } else {
+        setCurrentProjectPath(undefined);
       }
       showToast('已加载工程文件');
-    } catch {
+    } catch (err: unknown) {
+      console.error('打开 .lref 工程文件失败:', err);
       showToast('打开 .lref 工程文件失败');
     }
   }, [loadProjectState, showToast]);
@@ -419,9 +436,15 @@ export const App: React.FC = () => {
         const buf = await lrefFile.arrayBuffer();
         const loaded = await importProjectFromLref(new Uint8Array(buf));
         loadProjectState(loaded);
-        setCurrentProjectPath((lrefFile as File & { path?: string }).path || lrefFile.name);
+        const diskPath = getPathForFile(lrefFile);
+        if (isAbsolutePath(diskPath)) {
+          setCurrentProjectPath(diskPath);
+        } else {
+          setCurrentProjectPath(undefined);
+        }
         showToast(`已打开工程: ${lrefFile.name}`);
-      } catch {
+      } catch (err: unknown) {
+        console.error('解析 .lref 工程文件失败:', err);
         showToast('解析 .lref 工程文件失败');
       }
       return;
