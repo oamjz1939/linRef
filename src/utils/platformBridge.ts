@@ -222,12 +222,6 @@ export async function openProjectFile(
   });
 }
 
-// Aliases for compatibility
-export const writeClipboardImage = copyImageToClipboard;
-export const readClipboardImage = readImageFromClipboard;
-export const saveProject = saveProjectFile;
-export const openProject = openProjectFile;
-
 export const platformBridge = {
   isElectron,
   getPathForFile,
@@ -240,14 +234,8 @@ export const platformBridge = {
   setDocumentDirty,
   onRequestSaveAndClose,
   copyImageToClipboard,
-  writeClipboardImage,
   readImageFromClipboard,
-  readClipboardImage,
   saveProjectFile,
-  saveProject,
   openProjectFile,
-  openProject,
   blobToDataUrl
 };
-
-export default platformBridge;

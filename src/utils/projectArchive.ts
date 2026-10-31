@@ -122,7 +122,7 @@ export async function exportProjectToLref(
         const ext = getExtensionFromMimeType(mimeType);
         const filename = `${node.id}.${ext}`;
         const assetPath = `images/${filename}`;
-        imagesFolder?.file(filename, bytes);
+        imagesFolder?.file(filename, bytes, { compression: 'STORE' });
 
         const { src: _unusedSrc, ...rest } = node;
         metaNodes.push({
@@ -140,7 +140,7 @@ export async function exportProjectToLref(
 
   const now = new Date().toISOString();
   const meta: ProjectFileMeta = {
-    version: '1.3.0',
+    version: '1.3.5',
     createdAt: now,
     updatedAt: now,
     viewport,
@@ -149,11 +149,12 @@ export async function exportProjectToLref(
     nodes: metaNodes
   };
 
-  zip.file('meta.json', JSON.stringify(meta, null, 2));
-  return await zip.generateAsync({
-    type: 'uint8array',
+  zip.file('meta.json', JSON.stringify(meta, null, 2), {
     compression: 'DEFLATE',
     compressionOptions: { level: 6 }
+  });
+  return await zip.generateAsync({
+    type: 'uint8array'
   });
 }
 

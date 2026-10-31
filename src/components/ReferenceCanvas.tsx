@@ -448,32 +448,13 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
     const evt = e.evt;
     lastPointerScreenRef.current = { x: evt.clientX, y: evt.clientY };
 
-    // Middle mouse button or Space + Left mouse button => Pan canvas
-    if (evt.button === 1 || (spacePressed && evt.button === 0)) {
-      evt.preventDefault();
-      panStateRef.current = { lastClientX: evt.clientX, lastClientY: evt.clientY };
-      setIsPanning(true);
-      return;
-    }
-
-    // X key + Left mouse button => Smooth zoom anchored at mouse down position
-    if (xZoomPressed && evt.button === 0) {
-      evt.preventDefault();
-      const worldPt = screenToWorld(evt.clientX, evt.clientY, viewport, windowSize.width);
-      xZoomStateRef.current = {
-        anchorScreenX: evt.clientX,
-        anchorScreenY: evt.clientY,
-        anchorWorldX: worldPt.x,
-        anchorWorldY: worldPt.y,
-        lastClientX: evt.clientX
-      };
-      isXZoomDraggingRef.current = true;
-      setIsXZoomDragging(true);
-      return;
-    }
-
     // Clicked on empty stage background with left button
-    if (e.target === e.target.getStage() && evt.button === 0) {
+    if (
+      e.target === e.target.getStage() &&
+      evt.button === 0 &&
+      !spacePressed &&
+      !xZoomPressed
+    ) {
       if (editingTextId) {
         onStartEditText(null);
       }

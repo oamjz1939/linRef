@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CanvasNode, ImageCanvasNode } from '../types';
 import {
   Eye,
@@ -134,7 +134,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   const activeNode: CanvasNode | null = targetNode ?? targetImage ?? null;
   const [pos, setPos] = useState<{ left: number; top: number }>({ left: x, top: y });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();

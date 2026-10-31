@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Minus, Square } from 'lucide-react';
 import {
   isElectron,
@@ -8,38 +8,10 @@ import {
 } from '../utils/platformBridge';
 
 export interface FloatingHudProps {
-  /** Current viewport scale (e.g. 1.0 = 100%) */
-  scale?: number;
-  /** Whether global viewport horizontal flip is active */
-  globalFlipHorizontal?: boolean;
-  /** Alias for globalFlipHorizontal */
-  flipHorizontal?: boolean;
-  /** Whether the canvas is locked against dragging/editing */
-  canvasLocked?: boolean;
-  /** Whether the Electron window is pinned Always-on-Top */
-  alwaysOnTop?: boolean;
-  /** Undo availability */
-  canUndo?: boolean;
-  /** Redo availability */
-  canRedo?: boolean;
   /** Controlled help modal visibility (optional) */
   showShortcutsModal?: boolean;
   /** Callback when help modal visibility changes */
   onToggleShortcutsModal?: (show: boolean) => void;
-
-  // Optional legacy callbacks
-  onResetZoom?: () => void;
-  onFitView?: () => void;
-  onToggleGlobalFlip?: () => void;
-  onToggleCanvasLock?: () => void;
-  onToggleAlwaysOnTop?: () => void;
-  onImportImages?: () => void;
-  onCreateTextNote?: () => void;
-  onPackGrid?: () => void;
-  onUndo?: () => void;
-  onRedo?: () => void;
-  onOpenProject?: () => void;
-  onSaveProject?: () => void;
 }
 
 interface ShortcutEntry {
@@ -79,6 +51,22 @@ export const FloatingHud: React.FC<FloatingHudProps> = ({
       onToggleShortcutsModal(val);
     }
   };
+
+  useEffect(() => {
+    if (!isHelpOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setHelpOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isHelpOpen]);
 
   const isWindowsOrLinuxElectron =
     isElectron() &&

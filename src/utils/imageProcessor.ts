@@ -2,6 +2,7 @@ import {
   ColorAdjustments,
   CurvePoint,
   DEFAULT_COLOR_ADJUSTMENTS,
+  DEFAULT_CROP,
   ImageCanvasNode,
   NormalizedCrop
 } from '../types';
@@ -54,33 +55,29 @@ export function normalizeCurvePoints(points: CurvePoint[]): CurvePoint[] {
 }
 
 /**
- * Build a 256-entry Look-Up Table (Uint8Array) from tone curve control points.
- * Uses linear interpolation for 2 points and Monotonic Cubic Hermite Spline (Fritsch-Carlson) for >= 3 points.
+ * 构建单调三次 Hermite 样条插值求值函数（Fritsch-Carlson 方法）。
+ * 输入控制点数组，返回计算任意 x 在 [0, 255] 处插值结果的求值函数。
  */
-export function buildCurveLUT(curvePoints: CurvePoint[]): Uint8Array {
-  const lut = new Uint8Array(256);
+export function buildMonotoneCubicSpline(curvePoints: CurvePoint[]): (x: number) => number {
   const pts = normalizeCurvePoints(curvePoints);
   const n = pts.length;
-
   const first = pts[0];
   const last = pts[n - 1];
 
-  for (let x = 0; x <= first.x; x++) {
-    lut[x] = clampByte(first.y);
-  }
-  for (let x = last.x; x <= 255; x++) {
-    lut[x] = clampByte(last.y);
+  if (n === 1) {
+    const yVal = clamp(first.y, 0, 255);
+    return () => yVal;
   }
 
   if (n === 2) {
     const dx = last.x - first.x;
-    if (dx > 0) {
-      for (let x = first.x; x <= last.x; x++) {
-        const t = (x - first.x) / dx;
-        lut[x] = clampByte(first.y + t * (last.y - first.y));
-      }
-    }
-    return lut;
+    return (x: number) => {
+      if (x <= first.x) return clamp(first.y, 0, 255);
+      if (x >= last.x) return clamp(last.y, 0, 255);
+      if (dx <= 0) return clamp(first.y, 0, 255);
+      const t = (x - first.x) / dx;
+      return clamp(first.y + t * (last.y - first.y), 0, 255);
+    };
   }
 
   // Monotonic Cubic Hermite Spline (Fritsch-Carlson method)
@@ -124,27 +121,50 @@ export function buildCurveLUT(curvePoints: CurvePoint[]): Uint8Array {
     }
   }
 
-  for (let i = 0; i < n - 1; i++) {
+  return (x: number) => {
+    if (x <= first.x) return clamp(first.y, 0, 255);
+    if (x >= last.x) return clamp(last.y, 0, 255);
+
+    let i = 0;
+    while (i < n - 2 && x > pts[i + 1].x) {
+      i++;
+    }
+
     const p0 = pts[i];
     const p1 = pts[i + 1];
     const h = dx[i];
-    if (h <= 0) continue;
+    if (h <= 0) return clamp(p0.y, 0, 255);
 
-    for (let x = p0.x; x <= p1.x; x++) {
-      const t = (x - p0.x) / h;
-      const t2 = t * t;
-      const t3 = t2 * t;
+    const t = (x - p0.x) / h;
+    const t2 = t * t;
+    const t3 = t2 * t;
 
-      const h00 = 2 * t3 - 3 * t2 + 1;
-      const h10 = t3 - 2 * t2 + t;
-      const h01 = -2 * t3 + 3 * t2;
-      const h11 = t3 - t2;
+    const h00 = 2 * t3 - 3 * t2 + 1;
+    const h10 = t3 - 2 * t2 + t;
+    const h01 = -2 * t3 + 3 * t2;
+    const h11 = t3 - t2;
 
-      const y = h00 * p0.y + h10 * h * tangents[i] + h01 * p1.y + h11 * h * tangents[i + 1];
-      lut[x] = clampByte(y);
-    }
+    const y = h00 * p0.y + h10 * h * tangents[i] + h01 * p1.y + h11 * h * tangents[i + 1];
+    return clamp(y, 0, 255);
+  };
+}
+
+/**
+ * 计算单调三次 Hermite 样条在指定 x 处的插值。
+ */
+export function evaluateMonotoneCubicSpline(curvePoints: CurvePoint[], x: number): number {
+  return buildMonotoneCubicSpline(curvePoints)(x);
+}
+
+/**
+ * 根据曲线控制点生成 256 项查找表（Uint8Array）。
+ */
+export function buildCurveLUT(curvePoints: CurvePoint[]): Uint8Array {
+  const lut = new Uint8Array(256);
+  const evalSpline = buildMonotoneCubicSpline(curvePoints);
+  for (let x = 0; x <= 255; x++) {
+    lut[x] = clampByte(evalSpline(x));
   }
-
   return lut;
 }
 
@@ -271,21 +291,27 @@ export function getOrientedDimensions(
   return { width: naturalWidth, height: naturalHeight };
 }
 
-function drawOrientedBaseCanvas(
+/**
+ * 绘制方向旋转与水平翻转后的基准画布。
+ * 支持传入目标画布进行复用，避免频繁重复分配。
+ */
+export function drawOrientedBaseCanvas(
   img: HTMLImageElement,
   rotation: 0 | 90 | 180 | 270,
-  flipX: boolean
+  flipX: boolean,
+  targetCanvas?: HTMLCanvasElement
 ): HTMLCanvasElement {
   const natW = Math.max(1, img.naturalWidth || img.width || 1);
   const natH = Math.max(1, img.naturalHeight || img.height || 1);
   const { width: orientedW, height: orientedH } = getOrientedDimensions(natW, natH, rotation);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = orientedW;
-  canvas.height = orientedH;
+  const canvas = targetCanvas || document.createElement('canvas');
+  if (canvas.width !== orientedW) canvas.width = orientedW;
+  if (canvas.height !== orientedH) canvas.height = orientedH;
   const ctx = canvas.getContext('2d');
   if (!ctx) return canvas;
 
+  ctx.clearRect(0, 0, orientedW, orientedH);
   ctx.save();
   ctx.translate(orientedW / 2, orientedH / 2);
   if (flipX) {
@@ -335,38 +361,44 @@ function applyColorAdjustmentsToCanvas(
 }
 
 /**
- * Render an image node with rotation, flipX, crop, and per-image color adjustments applied.
+ * 渲染包含旋转、翻转、裁剪及颜色调整的图片节点。
+ * 单次坐标变换直接绘制裁剪目标区域，避免创建多余的中间过渡画布。
+ * 支持传入目标画布进行复用。
  */
 export function renderProcessedImage(
   img: HTMLImageElement,
-  node: Pick<ImageCanvasNode, 'rotation' | 'flipX' | 'crop' | 'adjustments'>
+  node: Pick<ImageCanvasNode, 'rotation' | 'flipX' | 'crop' | 'adjustments'>,
+  targetCanvas?: HTMLCanvasElement
 ): HTMLCanvasElement {
-  const orientedCanvas = drawOrientedBaseCanvas(img, node.rotation, node.flipX);
-  const orientedW = orientedCanvas.width;
-  const orientedH = orientedCanvas.height;
+  const natW = Math.max(1, img.naturalWidth || img.width || 1);
+  const natH = Math.max(1, img.naturalHeight || img.height || 1);
+  const { width: orientedW, height: orientedH } = getOrientedDimensions(natW, natH, node.rotation);
 
-  const cropX = clamp(node.crop.x, 0, 0.99) * orientedW;
-  const cropY = clamp(node.crop.y, 0, 0.99) * orientedH;
-  const cropW = Math.max(1, clamp(node.crop.width, 0.01, 1 - node.crop.x) * orientedW);
-  const cropH = Math.max(1, clamp(node.crop.height, 0.01, 1 - node.crop.y) * orientedH);
+  const crop = node.crop || DEFAULT_CROP;
+  const cropX = clamp(crop.x, 0, 0.99) * orientedW;
+  const cropY = clamp(crop.y, 0, 0.99) * orientedH;
+  const cropW = Math.max(1, clamp(crop.width, 0.01, 1 - crop.x) * orientedW);
+  const cropH = Math.max(1, clamp(crop.height, 0.01, 1 - crop.y) * orientedH);
 
-  const outCanvas = document.createElement('canvas');
-  outCanvas.width = Math.max(1, Math.round(cropW));
-  outCanvas.height = Math.max(1, Math.round(cropH));
+  const targetW = Math.max(1, Math.round(cropW));
+  const targetH = Math.max(1, Math.round(cropH));
+
+  const outCanvas = targetCanvas || document.createElement('canvas');
+  if (outCanvas.width !== targetW) outCanvas.width = targetW;
+  if (outCanvas.height !== targetH) outCanvas.height = targetH;
 
   const outCtx = outCanvas.getContext('2d');
   if (outCtx) {
-    outCtx.drawImage(
-      orientedCanvas,
-      cropX,
-      cropY,
-      cropW,
-      cropH,
-      0,
-      0,
-      outCanvas.width,
-      outCanvas.height
-    );
+    outCtx.clearRect(0, 0, targetW, targetH);
+    outCtx.save();
+    outCtx.scale(targetW / cropW, targetH / cropH);
+    outCtx.translate(orientedW / 2 - cropX, orientedH / 2 - cropY);
+    if (node.flipX) {
+      outCtx.scale(-1, 1);
+    }
+    outCtx.rotate((node.rotation * Math.PI) / 180);
+    outCtx.drawImage(img, -natW / 2, -natH / 2, natW, natH);
+    outCtx.restore();
   }
 
   applyColorAdjustmentsToCanvas(outCanvas, node.adjustments);
@@ -374,13 +406,15 @@ export function renderProcessedImage(
 }
 
 /**
- * Render the oriented and color-adjusted full image without cropping (used for interactive crop overlay).
+ * 渲染旋转、翻转及色彩调整后的完整无裁剪图片（用于交互式裁剪蒙版）。
+ * 支持传入目标画布进行复用。
  */
 export function renderOrientedUncroppedImage(
   img: HTMLImageElement,
-  node: Pick<ImageCanvasNode, 'rotation' | 'flipX' | 'adjustments'>
+  node: Pick<ImageCanvasNode, 'rotation' | 'flipX' | 'adjustments'>,
+  targetCanvas?: HTMLCanvasElement
 ): HTMLCanvasElement {
-  const orientedCanvas = drawOrientedBaseCanvas(img, node.rotation, node.flipX);
+  const orientedCanvas = drawOrientedBaseCanvas(img, node.rotation, node.flipX, targetCanvas);
   applyColorAdjustmentsToCanvas(orientedCanvas, node.adjustments);
   return orientedCanvas;
 }

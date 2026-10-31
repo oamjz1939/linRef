@@ -5,6 +5,7 @@ import {
   DEFAULT_COLOR_ADJUSTMENTS,
   ImageCanvasNode
 } from '../types';
+import { buildMonotoneCubicSpline } from '../utils/imageProcessor';
 import { X, RotateCcw, Sliders, Eye, Sparkles } from 'lucide-react';
 
 export interface ColorCurvePanelProps {
@@ -64,84 +65,21 @@ function clamp(val: number, min: number, max: number): number {
 }
 
 /**
- * Evaluate monotone cubic / smooth piecewise curve for SVG path rendering
+ * 使用统一的单调三次 Hermite 样条插值生成 SVG 路径数据。
  */
 function buildCurveSvgPath(points: CurvePoint[]): string {
-  const sorted = [...points].sort((a, b) => a.x - b.x);
-  if (sorted.length === 0) {
+  if (!points || points.length === 0) {
     return 'M 0 255 L 255 0';
   }
-  if (sorted.length === 1) {
-    const ySvg = 255 - clamp(sorted[0].y, 0, 255);
-    return `M 0 ${ySvg} L 255 ${ySvg}`;
-  }
 
-  // Sample 64 segments using monotone cubic Hermite interpolation
-  const n = sorted.length;
-  const xs = sorted.map((p) => p.x);
-  const ys = sorted.map((p) => p.y);
-
-  const dys: number[] = [];
-  const dxs: number[] = [];
-  const ms: number[] = [];
-
-  for (let i = 0; i < n - 1; i++) {
-    const dx = Math.max(1e-5, xs[i + 1] - xs[i]);
-    const dy = ys[i + 1] - ys[i];
-    dxs.push(dx);
-    dys.push(dy);
-    ms.push(dy / dx);
-  }
-
-  const c1s: number[] = [ms[0]];
-  for (let i = 0; i < dxs.length - 1; i++) {
-    const m = ms[i];
-    const mNext = ms[i + 1];
-    if (m * mNext <= 0) {
-      c1s.push(0);
-    } else {
-      const dx = dxs[i];
-      const dxNext = dxs[i + 1];
-      const common = dx + dxNext;
-      c1s.push((3 * common) / ((common + dxNext) / m + (common + dx) / mNext));
-    }
-  }
-  c1s.push(ms[ms.length - 1]);
-
-  const c2s: number[] = [];
-  const c3s: number[] = [];
-  for (let i = 0; i < c1s.length - 1; i++) {
-    const c1 = c1s[i];
-    const m = ms[i];
-    const invDx = 1 / dxs[i];
-    const common = c1 + c1s[i + 1] - m - m;
-    c2s.push((m - c1 - common) * invDx);
-    c3s.push(common * invDx * invDx);
-  }
-
-  const evalAt = (x: number): number => {
-    if (x <= xs[0]) return ys[0];
-    if (x >= xs[n - 1]) return ys[n - 1];
-    let i = 0;
-    while (i < n - 2 && x > xs[i + 1]) {
-      i++;
-    }
-    const diff = x - xs[i];
-    const diffSq = diff * diff;
-    return clamp(
-      ys[i] + c1s[i] * diff + c2s[i] * diffSq + c3s[i] * diff * diffSq,
-      0,
-      255
-    );
-  };
-
+  const evalSpline = buildMonotoneCubicSpline(points);
   const parts: string[] = [];
   for (let x = 0; x <= 255; x += 3) {
-    const y = evalAt(x);
+    const y = evalSpline(x);
     const svgY = (255 - y).toFixed(1);
     parts.push(`${x === 0 ? 'M' : 'L'} ${x} ${svgY}`);
   }
-  const endY = (255 - evalAt(255)).toFixed(1);
+  const endY = (255 - evalSpline(255)).toFixed(1);
   parts.push(`L 255 ${endY}`);
   return parts.join(' ');
 }

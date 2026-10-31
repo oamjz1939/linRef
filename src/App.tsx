@@ -206,14 +206,22 @@ export const App: React.FC = () => {
     input.accept = 'image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg';
     input.style.display = 'none';
 
-    input.onchange = async () => {
-      const files = input.files ? Array.from(input.files) : [];
+    const cleanup = () => {
       if (input.parentNode) {
         input.parentNode.removeChild(input);
       }
+    };
+
+    input.onchange = async () => {
+      const files = input.files ? Array.from(input.files) : [];
+      cleanup();
       if (files.length > 0) {
         await importImageFilesAt(files, getViewportCenterWorld());
       }
+    };
+
+    input.oncancel = () => {
+      cleanup();
     };
 
     document.body.appendChild(input);
@@ -705,24 +713,8 @@ export const App: React.FC = () => {
     >
       {/* Top Drag Region & Shortcuts Help Modal */}
       <FloatingHud
-        scale={viewport.scale}
-        canvasLocked={canvasLocked}
-        alwaysOnTop={alwaysOnTop}
-        canUndo={canUndo}
-        canRedo={canRedo}
         showShortcutsModal={showShortcutsModal}
         onToggleShortcutsModal={setShowShortcutsModal}
-        onResetZoom={handleResetZoom}
-        onFitView={() => fitAllToViewport(window.innerWidth, window.innerHeight)}
-        onToggleCanvasLock={handleToggleCanvasLock}
-        onToggleAlwaysOnTop={handleToggleAlwaysOnTop}
-        onImportImages={handleImportImagesFromPicker}
-        onCreateTextNote={() => handleCreateTextNote(getViewportCenterWorld())}
-        onPackGrid={packGrid}
-        onUndo={undo}
-        onRedo={redo}
-        onOpenProject={handleOpenProject}
-        onSaveProject={handleSaveProject}
       />
 
       {/* Infinite Konva Reference Canvas */}

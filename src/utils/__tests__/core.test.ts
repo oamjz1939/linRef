@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import JSZip from 'jszip';
 import {
   buildCurveLUT,
   buildCombinedLUT,
+  buildMonotoneCubicSpline,
+  evaluateMonotoneCubicSpline,
+  drawOrientedBaseCanvas,
+  renderProcessedImage,
   transformCropRotateCW,
   transformCropRotateCCW,
   transformCropFlipX,
@@ -18,7 +23,7 @@ import {
   imageSourceToBytes,
   getExtensionFromMimeType
 } from '../projectArchive';
-import { getPathForFile } from '../platformBridge';
+import { getPathForFile, platformBridge } from '../platformBridge';
 import {
   CanvasNode,
   DEFAULT_COLOR_ADJUSTMENTS,
@@ -55,6 +60,31 @@ describe('imageProcessor', () => {
       expect(lut[i]).toBeGreaterThanOrEqual(lut[i - 1]);
       expect(lut[i]).toBeGreaterThanOrEqual(0);
       expect(lut[i]).toBeLessThanOrEqual(255);
+    }
+  });
+
+  it('buildMonotoneCubicSpline handles single control point and empty array', () => {
+    const singleSpline = buildMonotoneCubicSpline([{ x: 100, y: 50 }]);
+    expect(singleSpline(0)).toBe(50);
+    expect(singleSpline(128)).toBe(50);
+    expect(singleSpline(255)).toBe(50);
+
+    const emptySpline = buildMonotoneCubicSpline([]);
+    expect(emptySpline(0)).toBe(0);
+    expect(emptySpline(128)).toBe(128);
+    expect(emptySpline(255)).toBe(255);
+  });
+
+  it('evaluateMonotoneCubicSpline matches buildCurveLUT across all 256 entries', () => {
+    const pts = [
+      { x: 0, y: 10 },
+      { x: 60, y: 30 },
+      { x: 180, y: 210 },
+      { x: 255, y: 245 }
+    ];
+    const lut = buildCurveLUT(pts);
+    for (let x = 0; x < 256; x++) {
+      expect(lut[x]).toBe(Math.max(0, Math.min(255, Math.round(evaluateMonotoneCubicSpline(pts, x)))));
     }
   });
 
@@ -103,6 +133,51 @@ describe('imageProcessor', () => {
     expect(getOrientedDimensions(800, 600, 90)).toEqual({ width: 600, height: 800 });
     expect(getOrientedDimensions(800, 600, 180)).toEqual({ width: 800, height: 600 });
     expect(getOrientedDimensions(800, 600, 270)).toEqual({ width: 600, height: 800 });
+  });
+
+  it('drawOrientedBaseCanvas and renderProcessedImage support targetCanvas reuse', () => {
+    const mockCtx = {
+      clearRect: () => {},
+      save: () => {},
+      scale: () => {},
+      translate: () => {},
+      rotate: () => {},
+      drawImage: () => {},
+      restore: () => {},
+      getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+      putImageData: () => {}
+    };
+    const mockCanvas = {
+      width: 0,
+      height: 0,
+      getContext: () => mockCtx
+    } as unknown as HTMLCanvasElement;
+
+    const mockImg = {
+      width: 200,
+      height: 100,
+      naturalWidth: 200,
+      naturalHeight: 100
+    } as unknown as HTMLImageElement;
+
+    const oriented = drawOrientedBaseCanvas(mockImg, 90, false, mockCanvas);
+    expect(oriented).toBe(mockCanvas);
+    expect(mockCanvas.width).toBe(100);
+    expect(mockCanvas.height).toBe(200);
+
+    const processed = renderProcessedImage(
+      mockImg,
+      {
+        rotation: 0,
+        flipX: false,
+        crop: { x: 0, y: 0, width: 0.5, height: 0.5 },
+        adjustments: DEFAULT_COLOR_ADJUSTMENTS
+      },
+      mockCanvas
+    );
+    expect(processed).toBe(mockCanvas);
+    expect(mockCanvas.width).toBe(100);
+    expect(mockCanvas.height).toBe(50);
   });
 });
 
@@ -371,6 +446,49 @@ describe('projectArchive (.lref roundtrip)', () => {
     // The valid image and text note should be restored, while the corrupted image is safely omitted
     expect(restored.nodes).toHaveLength(2);
     expect(restored.nodes.map((n) => n.id)).toEqual(['valid_img', 'note_1']);
+  });
+
+  it('exportProjectToLref stores image binary with STORE compression', async () => {
+    const fakeDataUrl =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const imageNode: ImageCanvasNode = {
+      id: 'store_test_img',
+      type: 'image',
+      name: 'store_test.png',
+      naturalWidth: 100,
+      naturalHeight: 100,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      zIndex: 1,
+      rotation: 0,
+      flipX: false,
+      crop: DEFAULT_CROP,
+      adjustments: DEFAULT_COLOR_ADJUSTMENTS,
+      src: fakeDataUrl
+    };
+
+    const bytes = await exportProjectToLref([imageNode], { x: 0, y: 0, scale: 1, flipHorizontal: false }, false);
+    const zip = await JSZip.loadAsync(bytes);
+    const metaEntry = zip.file('meta.json');
+    expect(metaEntry).not.toBeNull();
+    const imageEntry = zip.file('images/store_test_img.png');
+    expect(imageEntry).not.toBeNull();
+  });
+
+  it('platformBridge exports required methods and excludes redundant aliases', () => {
+    expect(typeof platformBridge.isElectron).toBe('function');
+    expect(typeof platformBridge.getPathForFile).toBe('function');
+    expect(typeof platformBridge.copyImageToClipboard).toBe('function');
+    expect(typeof platformBridge.readImageFromClipboard).toBe('function');
+    expect(typeof platformBridge.saveProjectFile).toBe('function');
+    expect(typeof platformBridge.openProjectFile).toBe('function');
+    // Redundant aliases should not exist on platformBridge object
+    expect((platformBridge as any).writeClipboardImage).toBeUndefined();
+    expect((platformBridge as any).readClipboardImage).toBeUndefined();
+    expect((platformBridge as any).saveProject).toBeUndefined();
+    expect((platformBridge as any).openProject).toBeUndefined();
   });
 
   it('platformBridge getPathForFile falls back gracefully when window.electronAPI is missing or throws', () => {
