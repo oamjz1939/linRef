@@ -5,6 +5,8 @@ import * as fs from 'fs';
 let mainWindow: BrowserWindow | null = null;
 let isDocumentDirty = false;
 let isForceClosing = false;
+let isPromptingClose = false;
+let isAppQuitting = false;
 
 function getAppIconPath(): string | undefined {
   const isMac = process.platform === 'darwin';
@@ -55,39 +57,68 @@ function createWindow(): void {
   }
 
   mainWindow.on('close', async (e) => {
+    // 强制关闭流程直接放行
     if (isForceClosing) {
       return;
     }
+    // 无未保存改动直接放行
     if (!isDocumentDirty) {
       return;
     }
 
+    // 拦截默认关闭动作
     e.preventDefault();
 
-    if (!mainWindow) return;
+    // 避免重复触发弹窗导致多重对话框卡死
+    if (isPromptingClose) {
+      return;
+    }
 
-    const choice = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      buttons: ['保存', '放弃保存', '取消'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-      title: '未保存的更改',
-      message: '是否保存对当前工程的更改？',
-      detail: '如果放弃保存，未保存的参考图与排版调整将会丢失。'
-    });
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
 
-    if (choice.response === 0) {
-      mainWindow.webContents.send('app:request-save-and-close');
-    } else if (choice.response === 1) {
-      isForceClosing = true;
-      mainWindow.close();
+    isPromptingClose = true;
+
+    try {
+      const choice = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['保存', '不保存', '取消'],
+        defaultId: 0,
+        cancelId: 2,
+        noLink: true,
+        title: '未保存的更改',
+        message: '是否保存对当前工程的更改？',
+        detail: '如果选择“不保存”，您所做的修改将会丢失。'
+      });
+
+      if (choice.response === 0) {
+        // 用户选择保存：请求渲染进程组装数据并弹出系统保存对话框
+        mainWindow.webContents.send('app:request-save-and-close');
+      } else if (choice.response === 1) {
+        // 用户选择不保存：立即强制销毁窗口或退出，不触发任何卸载阻塞
+        isForceClosing = true;
+        isDocumentDirty = false;
+        if (isAppQuitting || process.platform !== 'darwin') {
+          app.exit(0);
+        } else {
+          mainWindow.destroy();
+        }
+      } else {
+        // 用户选择取消：重置退出标志，停留在画板中继续操作
+        isAppQuitting = false;
+      }
+    } catch (err) {
+      console.error('退出确认弹窗异常:', err);
+    } finally {
+      isPromptingClose = false;
     }
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
     isForceClosing = false;
+    isPromptingClose = false;
   });
 }
 
@@ -129,7 +160,12 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('window:force-close', () => {
     isForceClosing = true;
-    mainWindow?.close();
+    isDocumentDirty = false;
+    if (isAppQuitting || process.platform !== 'darwin') {
+      app.exit(0);
+    } else {
+      mainWindow?.destroy();
+    }
   });
 
   ipcMain.handle('clipboard:write-image', (_event, dataUrl: string) => {
@@ -223,6 +259,10 @@ app.whenReady().then(() => {
       createWindow();
     }
   });
+});
+
+app.on('before-quit', () => {
+  isAppQuitting = true;
 });
 
 app.on('window-all-closed', () => {

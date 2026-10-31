@@ -13,6 +13,7 @@ import {
   copyImageToClipboard,
   forceCloseWindow,
   getAlwaysOnTop,
+  isElectron,
   onRequestSaveAndClose,
   openProjectFile,
   readImageFromClipboard,
@@ -344,8 +345,11 @@ export const App: React.FC = () => {
     return unsubscribe;
   }, [handleSaveProject]);
 
-  // Fallback beforeunload prompt for web environments
+  // Fallback beforeunload prompt ONLY for browser environments
   useEffect(() => {
+    if (isElectron()) {
+      return;
+    }
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isDirty) {
         e.preventDefault();
