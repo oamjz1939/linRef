@@ -15,6 +15,9 @@ export interface ElectronAPI {
   openProject: (
     filePath?: string
   ) => Promise<{ canceled: boolean; filePath?: string; data?: Uint8Array }>;
+  setDocumentDirty: (dirty: boolean) => Promise<boolean>;
+  forceCloseWindow: () => Promise<void>;
+  onRequestSaveAndClose: (callback: () => void) => () => void;
 }
 
 const api: ElectronAPI = {
@@ -27,7 +30,16 @@ const api: ElectronAPI = {
   readClipboardImage: () => ipcRenderer.invoke('clipboard:read-image'),
   saveProject: (payload: { data: Uint8Array; filePath?: string }) =>
     ipcRenderer.invoke('project:save', payload),
-  openProject: (filePath?: string) => ipcRenderer.invoke('project:open', filePath)
+  openProject: (filePath?: string) => ipcRenderer.invoke('project:open', filePath),
+  setDocumentDirty: (dirty: boolean) => ipcRenderer.invoke('window:set-dirty', dirty),
+  forceCloseWindow: () => ipcRenderer.invoke('window:force-close'),
+  onRequestSaveAndClose: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:request-save-and-close', handler);
+    return () => {
+      ipcRenderer.removeListener('app:request-save-and-close', handler);
+    };
+  }
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

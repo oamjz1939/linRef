@@ -80,6 +80,7 @@ export function useCanvasStore() {
   const [canvasLocked, setCanvasLocked] = useState<boolean>(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState<boolean>(false);
   const [noteFontSize, setNoteFontSize] = useState<number>(() => readPersistedNoteFontSize());
+  const [isDirty, setIsDirty] = useState<boolean>(false);
   const [viewport, setViewport] = useState<ViewportState>({
     x: 0,
     y: 0,
@@ -104,6 +105,7 @@ export function useCanvasStore() {
         const next = updater(prev);
         if (next !== prev) {
           pushHistory(prev);
+          setIsDirty(true);
         }
         return next;
       });
@@ -118,6 +120,7 @@ export function useCanvasStore() {
       pastRef.current = pastRef.current.slice(0, -1);
       futureRef.current = [cloneNodes(current), ...futureRef.current];
       setHistoryTick((t) => t + 1);
+      setIsDirty(true);
       return cloneNodes(previous);
     });
     setCroppingNodeId(null);
@@ -130,6 +133,7 @@ export function useCanvasStore() {
       futureRef.current = futureRef.current.slice(1);
       pastRef.current = [...pastRef.current, cloneNodes(current)];
       setHistoryTick((t) => t + 1);
+      setIsDirty(true);
       return cloneNodes(next);
     });
     setCroppingNodeId(null);
@@ -273,6 +277,7 @@ export function useCanvasStore() {
     (snapshotBeforeDrag: CanvasNode[]) => {
       if (canvasLocked) return;
       pushHistory(snapshotBeforeDrag);
+      setIsDirty(true);
     },
     [canvasLocked, pushHistory]
   );
@@ -612,6 +617,7 @@ export function useCanvasStore() {
       setCroppingNodeId(null);
       setEditingTextId(null);
       setHistoryTick((t) => t + 1);
+      setIsDirty(false);
     },
     []
   );
@@ -636,6 +642,8 @@ export function useCanvasStore() {
     setCanvasLocked,
     alwaysOnTop,
     setAlwaysOnTop,
+    isDirty,
+    setIsDirty,
     noteFontSize,
     changeGlobalNoteFontSize,
     viewport,

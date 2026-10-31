@@ -235,6 +235,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const shapeRefs = useRef<Map<string, Konva.Node>>(new Map());
 
+  const isXZoomDraggingRef = useRef(false);
   const panStateRef = useRef<{ lastClientX: number; lastClientY: number } | null>(null);
   const xZoomStateRef = useRef<{
     anchorScreenX: number;
@@ -274,20 +275,10 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Initialize / reset X-key zoom anchor when xZoomPressed changes
+  // Reset X-zoom drag state when xZoomPressed released
   useEffect(() => {
-    if (xZoomPressed) {
-      const sx = lastPointerScreenRef.current.x;
-      const sy = lastPointerScreenRef.current.y;
-      const worldPt = screenToWorld(sx, sy, viewport, windowSize.width);
-      xZoomStateRef.current = {
-        anchorScreenX: sx,
-        anchorScreenY: sy,
-        anchorWorldX: worldPt.x,
-        anchorWorldY: worldPt.y,
-        lastClientX: sx
-      };
-    } else {
+    if (!xZoomPressed) {
+      isXZoomDraggingRef.current = false;
       xZoomStateRef.current = null;
       setIsXZoomDragging(false);
     }
@@ -361,6 +352,32 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
 
   // Global mousemove / mouseup listeners for panning, X-zoom, and selection box
   useEffect(() => {
+    const handleWindowMouseDown = (e: MouseEvent) => {
+      // Middle mouse button or Space + Left button => Pan canvas
+      if (e.button === 1 || (spacePressed && e.button === 0)) {
+        e.preventDefault();
+        panStateRef.current = { lastClientX: e.clientX, lastClientY: e.clientY };
+        setIsPanning(true);
+        return;
+      }
+
+      // X key + Left mouse button => Start zoom dragging
+      if (xZoomPressed && e.button === 0) {
+        e.preventDefault();
+        const worldPt = screenToWorld(e.clientX, e.clientY, viewport, windowSize.width);
+        xZoomStateRef.current = {
+          anchorScreenX: e.clientX,
+          anchorScreenY: e.clientY,
+          anchorWorldX: worldPt.x,
+          anchorWorldY: worldPt.y,
+          lastClientX: e.clientX
+        };
+        isXZoomDraggingRef.current = true;
+        setIsXZoomDragging(true);
+        return;
+      }
+    };
+
     const handleWindowMouseMove = (e: MouseEvent) => {
       lastPointerScreenRef.current = { x: e.clientX, y: e.clientY };
       if (onPointerMoveWorld) {
@@ -380,7 +397,8 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
         return;
       }
 
-      if (xZoomPressed && xZoomStateRef.current) {
+      // Only perform zoom when BOTH X key is held AND mouse left button is being dragged
+      if (xZoomPressed && isXZoomDraggingRef.current && xZoomStateRef.current) {
         const dx = e.clientX - xZoomStateRef.current.lastClientX;
         xZoomStateRef.current.lastClientX = e.clientX;
         if (Math.abs(dx) > 0) {
@@ -401,22 +419,26 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
         panStateRef.current = null;
         setIsPanning(false);
       }
-      if (isXZoomDragging) {
+      if (isXZoomDraggingRef.current) {
+        isXZoomDraggingRef.current = false;
+        xZoomStateRef.current = null;
         setIsXZoomDragging(false);
       }
     };
 
+    window.addEventListener('mousedown', handleWindowMouseDown, true);
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', handleWindowMouseUp);
     return () => {
+      window.removeEventListener('mousedown', handleWindowMouseDown, true);
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
     };
   }, [
     viewport,
     windowSize.width,
+    spacePressed,
     xZoomPressed,
-    isXZoomDragging,
     onChangeViewport,
     zoomAtScreenPoint,
     onPointerMoveWorld
@@ -445,6 +467,7 @@ export const ReferenceCanvas: React.FC<ReferenceCanvasProps> = ({
         anchorWorldY: worldPt.y,
         lastClientX: evt.clientX
       };
+      isXZoomDraggingRef.current = true;
       setIsXZoomDragging(true);
       return;
     }

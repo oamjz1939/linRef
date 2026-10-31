@@ -3,6 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
+let isDocumentDirty = false;
+let isForceClosing = false;
 
 function getAppIconPath(): string | undefined {
   const isMac = process.platform === 'darwin';
@@ -52,8 +54,40 @@ function createWindow(): void {
     }
   }
 
+  mainWindow.on('close', async (e) => {
+    if (isForceClosing) {
+      return;
+    }
+    if (!isDocumentDirty) {
+      return;
+    }
+
+    e.preventDefault();
+
+    if (!mainWindow) return;
+
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'question',
+      buttons: ['保存', '放弃保存', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+      title: '未保存的更改',
+      message: '是否保存对当前工程的更改？',
+      detail: '如果放弃保存，未保存的参考图与排版调整将会丢失。'
+    });
+
+    if (choice.response === 0) {
+      mainWindow.webContents.send('app:request-save-and-close');
+    } else if (choice.response === 1) {
+      isForceClosing = true;
+      mainWindow.close();
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+    isForceClosing = false;
   });
 }
 
@@ -84,6 +118,17 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle('window:close', () => {
+    mainWindow?.close();
+  });
+
+  ipcMain.handle('window:set-dirty', (_event, dirty: boolean) => {
+    isDocumentDirty = Boolean(dirty);
+    mainWindow?.setDocumentEdited?.(isDocumentDirty);
+    return isDocumentDirty;
+  });
+
+  ipcMain.handle('window:force-close', () => {
+    isForceClosing = true;
     mainWindow?.close();
   });
 

@@ -13,6 +13,9 @@ export interface ElectronAPI {
   openProject: (
     filePath?: string
   ) => Promise<{ canceled: boolean; filePath?: string; data?: Uint8Array }>;
+  setDocumentDirty: (dirty: boolean) => Promise<boolean>;
+  forceCloseWindow: () => Promise<void>;
+  onRequestSaveAndClose: (callback: () => void) => () => void;
 }
 
 declare global {

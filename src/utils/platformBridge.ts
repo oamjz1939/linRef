@@ -41,6 +41,28 @@ export async function closeWindow(): Promise<void> {
   }
 }
 
+export async function forceCloseWindow(): Promise<void> {
+  if (window.electronAPI) {
+    await window.electronAPI.forceCloseWindow();
+  } else {
+    window.close();
+  }
+}
+
+export async function setDocumentDirty(dirty: boolean): Promise<boolean> {
+  if (window.electronAPI) {
+    return window.electronAPI.setDocumentDirty(dirty);
+  }
+  return dirty;
+}
+
+export function onRequestSaveAndClose(callback: () => void): () => void {
+  if (window.electronAPI) {
+    return window.electronAPI.onRequestSaveAndClose(callback);
+  }
+  return () => {};
+}
+
 function dataUrlToBlob(dataUrl: string): Blob {
   const parts = dataUrl.split(',');
   const mimeMatch = parts[0]?.match(/:(.*?);/);
@@ -196,6 +218,9 @@ export const platformBridge = {
   minimizeWindow,
   toggleMaximizeWindow,
   closeWindow,
+  forceCloseWindow,
+  setDocumentDirty,
+  onRequestSaveAndClose,
   copyImageToClipboard,
   writeClipboardImage,
   readImageFromClipboard,

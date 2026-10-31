@@ -73,7 +73,7 @@ export async function exportProjectToLref(
 
   const now = new Date().toISOString();
   const meta: ProjectFileMeta = {
-    version: '1.1.0',
+    version: '1.2.0',
     createdAt: now,
     updatedAt: now,
     viewport,

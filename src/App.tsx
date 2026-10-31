@@ -11,11 +11,14 @@ import { exportProjectToLref, importProjectFromLref } from './utils/projectArchi
 import {
   blobToDataUrl,
   copyImageToClipboard,
+  forceCloseWindow,
   getAlwaysOnTop,
+  onRequestSaveAndClose,
   openProjectFile,
   readImageFromClipboard,
   saveProjectFile,
-  setAlwaysOnTop as bridgeSetAlwaysOnTop
+  setAlwaysOnTop as bridgeSetAlwaysOnTop,
+  setDocumentDirty
 } from './utils/platformBridge';
 
 function loadImageDimensions(src: string): Promise<{ width: number; height: number; img: HTMLImageElement }> {
@@ -53,6 +56,8 @@ export const App: React.FC = () => {
     setCanvasLocked,
     alwaysOnTop,
     setAlwaysOnTop,
+    isDirty,
+    setIsDirty,
     noteFontSize,
     changeGlobalNoteFontSize,
     viewport,
@@ -304,7 +309,7 @@ export const App: React.FC = () => {
   }, [alwaysOnTop, setAlwaysOnTop, showToast]);
 
   // Save .lref project
-  const handleSaveProject = useCallback(async () => {
+  const handleSaveProject = useCallback(async (): Promise<boolean> => {
     try {
       const bytes = await exportProjectToLref(nodes, viewport, canvasLocked, noteFontSize);
       const res = await saveProjectFile(bytes, currentProjectPath);
@@ -312,12 +317,44 @@ export const App: React.FC = () => {
         if (res.filePath) {
           setCurrentProjectPath(res.filePath);
         }
+        setIsDirty(false);
         showToast('工程已保存 (.lref)');
+        return true;
       }
+      return false;
     } catch {
       showToast('保存工程失败');
+      return false;
     }
-  }, [nodes, viewport, canvasLocked, noteFontSize, currentProjectPath, showToast]);
+  }, [nodes, viewport, canvasLocked, noteFontSize, currentProjectPath, setIsDirty, showToast]);
+
+  // Sync document dirty state with Electron and browser window
+  useEffect(() => {
+    setDocumentDirty(isDirty);
+  }, [isDirty]);
+
+  // Handle Electron app quit request when document is dirty
+  useEffect(() => {
+    const unsubscribe = onRequestSaveAndClose(async () => {
+      const saved = await handleSaveProject();
+      if (saved) {
+        await forceCloseWindow();
+      }
+    });
+    return unsubscribe;
+  }, [handleSaveProject]);
+
+  // Fallback beforeunload prompt for web environments
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty]);
 
   // Open .lref project
   const handleOpenProject = useCallback(async () => {
